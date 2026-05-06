@@ -43,6 +43,7 @@ repomix-output.xml
 # Internal / personal
 .claude/
 plans/
+skills/
 .gitkeep
 
 # Journals (internal)
