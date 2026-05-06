@@ -3,11 +3,13 @@
  * Pancake API expects array params as bracket-style repeated keys (`key[]=v1&key[]=v2`).
  * Sending JSON-encoded arrays triggers HTTP 500 on list endpoints.
  *
- * NOTE on encoding: URLSearchParams.toString() percent-encodes `[]` to `%5B%5D`.
- * Most server-side parsers (PHP, Phoenix) accept both forms; live-verified for
- * top-level arrays (`fields[]`, `filter_status[]`). Nested arrays (e.g.
- * `order_sources=[["-1","314"]]`) chosen as Option B (inner element JSON-encoded);
- * UNVERIFIED against live API — only matters for `order_sources` filter.
+ * Live-verified 2026-05-06 against pos.pages.fm/api/v1/shops/{id}/orders:
+ * - `fields%5B%5D=id` (URLSearchParams percent-encoded) → HTTP 200, projection works
+ * - Literal `fields[]=id` → HTTP 200 (Pancake accepts both)
+ * - `fields=["id"]` (JSON-encoded, old buggy behavior) → HTTP 500
+ * - Nested `order_sources[]=["-1"]` (Option B, inner JSON), `order_sources[]=-1` (scalar),
+ *   and `order_sources[][]=-1` (double-bracket) all return identical filtered counts —
+ *   Pancake normalizes all three.
  */
 export function buildQueryParams(params: Record<string, unknown>): URLSearchParams {
   const sp = new URLSearchParams();
