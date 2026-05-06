@@ -84,7 +84,7 @@ describe("top_orders handler", () => {
     );
   });
 
-  test("default fields applied when not given", async () => {
+  test("default fields applied when not given (no items_length — not a Pancake field)", async () => {
     const client = mockClient({
       data: [],
       success: true,
@@ -100,7 +100,6 @@ describe("top_orders handler", () => {
       "total_price",
       "inserted_at",
       "bill_full_name",
-      "items_length",
     ]);
   });
 
@@ -186,7 +185,7 @@ describe("revenue_summary handler", () => {
     expect(r.currency).toBe("VND");
   });
 
-  test("zero values when aggs missing", async () => {
+  test("zero values + warning when aggs missing", async () => {
     const client = mockClient({
       data: [],
       success: true,
@@ -202,6 +201,31 @@ describe("revenue_summary handler", () => {
     expect(r.revenue_cod).toBe(0);
     expect(r.shipping_fee).toBe(0);
     expect(r.status_breakdown).toEqual([]);
+    expect(r.aggs_available).toBe(false);
+    expect((r.warnings as string[]).length).toBeGreaterThan(0);
+  });
+
+  test("rejects NaN / non-finite values (treats as null, sets warning)", async () => {
+    const client = mockClient({
+      data: [],
+      success: true,
+      page_number: 1,
+      page_size: 1,
+      total_entries: 5,
+      total_pages: 5,
+      aggs: {
+        cod: { value: Number.NaN },
+        prepaid: { value: Infinity },
+      },
+    });
+    const r = (await handleAnalyticsTool(
+      { action: "revenue_summary", startDateTime: 0, endDateTime: 1 },
+      client,
+    )) as Record<string, unknown>;
+    expect(r.revenue_cod).toBe(0);
+    expect(r.prepaid).toBe(0);
+    expect(r.aggs_available).toBe(true);
+    expect((r.warnings as string[]).length).toBeGreaterThan(0);
   });
 
   test("requests page_size=1 + minimal fields to skip data payload", async () => {

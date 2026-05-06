@@ -2,8 +2,12 @@
  * Builds query string parameters from a flat object.
  * Pancake API expects array params as bracket-style repeated keys (`key[]=v1&key[]=v2`).
  * Sending JSON-encoded arrays triggers HTTP 500 on list endpoints.
- * Nested arrays (e.g. `order_sources=[["-1","314"]]`) keep their inner element as JSON
- * since the wire grouping must be preserved.
+ *
+ * NOTE on encoding: URLSearchParams.toString() percent-encodes `[]` to `%5B%5D`.
+ * Most server-side parsers (PHP, Phoenix) accept both forms; live-verified for
+ * top-level arrays (`fields[]`, `filter_status[]`). Nested arrays (e.g.
+ * `order_sources=[["-1","314"]]`) chosen as Option B (inner element JSON-encoded);
+ * UNVERIFIED against live API — only matters for `order_sources` filter.
  */
 export function buildQueryParams(params: Record<string, unknown>): URLSearchParams {
   const sp = new URLSearchParams();
@@ -14,7 +18,9 @@ export function buildQueryParams(params: Record<string, unknown>): URLSearchPara
     if (Array.isArray(value)) {
       if (value.length === 0) continue;
       for (const v of value) {
+        if (v === undefined || v === null) continue;
         const encoded = Array.isArray(v) ? JSON.stringify(v) : String(v);
+        if (encoded === "") continue;
         sp.append(`${key}[]`, encoded);
       }
     } else {

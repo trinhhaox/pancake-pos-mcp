@@ -2,12 +2,14 @@ import { z } from "zod";
 import type { PancakeHttpClient } from "../api-client/pancake-http-client.js";
 import { formatPaginatedResult } from "../shared/pagination-helpers.js";
 
+// Fields verified to exist on Pancake order list responses. `items_length` was
+// removed — not a documented field; would have been silently dropped by ES
+// _source projection, leading LLMs to hallucinate counts.
 const DEFAULT_TOP_ORDER_FIELDS = [
   "id",
   "total_price",
   "inserted_at",
   "bill_full_name",
-  "items_length",
 ];
 
 const METRIC_TO_SORT = {
@@ -58,7 +60,6 @@ interface OrderListItem {
   total_price?: number;
   inserted_at?: string;
   bill_full_name?: string;
-  items_length?: number;
   [k: string]: unknown;
 }
 
@@ -89,24 +90,39 @@ export async function handleAnalyticsTool(
         filter_status: args.filter_status,
       });
       const aggs = result.aggs;
-      const numeric = (key: string): number => {
+      // Reject NaN / non-finite / non-numeric so callers don't silently see 0
+      // when a malformed value slips through the unchecked Pancake response.
+      const numeric = (key: string): number | null => {
         const v = aggs?.[key];
-        return v && "value" in v && typeof v.value === "number" ? v.value : 0;
+        if (!v || !("value" in v)) return null;
+        return typeof v.value === "number" && Number.isFinite(v.value) ? v.value : null;
       };
       const buckets = (() => {
         const v = aggs?.status;
         return v && "buckets" in v ? (v.buckets ?? []) : [];
       })();
+
+      const cod = numeric("cod");
+      const prepaid = numeric("prepaid");
+      const shippingFee = numeric("shipping_fee");
+      const partnerFee = numeric("partner_fee");
+
+      const warnings: string[] = [];
+      if (!aggs) warnings.push("aggs missing from API response — revenue/breakdown unavailable");
+      else if (cod === null && prepaid === null) warnings.push("aggs.cod and aggs.prepaid both missing — revenue likely unavailable");
+
       return {
         period: { from: args.startDateTime, to: args.endDateTime },
         total_orders: result.total_entries,
-        revenue_cod: numeric("cod"),
-        prepaid: numeric("prepaid"),
-        shipping_fee: numeric("shipping_fee"),
-        partner_fee: numeric("partner_fee"),
+        revenue_cod: cod ?? 0,
+        prepaid: prepaid ?? 0,
+        shipping_fee: shippingFee ?? 0,
+        partner_fee: partnerFee ?? 0,
         status_breakdown: buckets,
         currency: "VND",
-        note: "revenue_cod = aggs.cod sum (cash-on-delivery only). For prepaid/bank-transfer revenue use prepaid field.",
+        aggs_available: !!aggs,
+        warnings,
+        note: "revenue_cod = aggs.cod sum (cash-on-delivery only). For prepaid/bank-transfer revenue use prepaid field. If warnings non-empty, treat numeric fields as unreliable.",
       };
     }
   }

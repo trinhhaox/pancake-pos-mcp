@@ -43,6 +43,11 @@ describe("buildQueryParams - array serialization", () => {
     expect(sp.getAll("order_sources[]")).toEqual(['["-1","314"]']);
   });
 
+  test("empty/null/undefined elements inside array are filtered", () => {
+    const sp = buildQueryParams({ fields: ["id", "", null, undefined, "total"] });
+    expect(sp.getAll("fields[]")).toEqual(["id", "total"]);
+  });
+
   test("boolean coerced via String()", () => {
     const sp = buildQueryParams({ include_total: true });
     expect(sp.get("include_total")).toBe("true");
