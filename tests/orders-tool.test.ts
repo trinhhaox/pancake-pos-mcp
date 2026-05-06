@@ -354,6 +354,73 @@ describe("handleOrdersTool — update address validation", () => {
     expect(warnings[0]).toMatch(/network down/);
   });
 
+  it("Update items: schema accepts items array (regression: was silently stripped)", () => {
+    const parsed = ordersToolSchema.parse({
+      action: "update",
+      order_id: 361,
+      items: [{ quantity: 2, variation_id: "v1", product_id: "p1" }],
+    }) as Record<string, unknown>;
+    expect(parsed.items).toEqual([
+      { quantity: 2, variation_id: "v1", product_id: "p1" },
+    ]);
+  });
+
+  it("Update items: status===0 → pre-GET passes, PUT body contains items", async () => {
+    const client = mockClient({
+      get: vi.fn().mockResolvedValue({ data: { id: 361, status: 0 }, success: true }),
+      put: vi.fn().mockResolvedValue({ data: { id: 361 }, success: true }),
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "update",
+      order_id: 361,
+      items: [{ quantity: 3, variation_id: "v1", product_id: "p1" }],
+    });
+    await handleOrdersTool(parsed, client);
+    expect(client.get).toHaveBeenCalledWith("orders/361");
+    expect(client.put).toHaveBeenCalledWith(
+      "orders/361",
+      expect.objectContaining({
+        items: [{ quantity: 3, variation_id: "v1", product_id: "p1" }],
+      }),
+    );
+  });
+
+  it("Update items: status>=1 → throws, PUT not called", async () => {
+    const putMock = vi.fn();
+    const client = mockClient({
+      get: vi.fn().mockResolvedValue({ data: { id: 361, status: 1 }, success: true }),
+      put: putMock,
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "update",
+      order_id: 361,
+      items: [{ quantity: 1, variation_id: "v1", product_id: "p1" }],
+    });
+    await expect(handleOrdersTool(parsed, client)).rejects.toThrow(/status 1/);
+    expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it("total_discount silent-drop → warning surfaced via verify-after-update", async () => {
+    const client = mockClient({
+      put: vi.fn().mockResolvedValue({ data: { id: 361 }, success: true }),
+      get: vi.fn().mockResolvedValue({
+        data: { id: 361, total_discount: 0 },
+        success: true,
+      }),
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "update",
+      order_id: 361,
+      total_discount: 50000,
+    });
+    const result = (await handleOrdersTool(parsed, client)) as Record<string, unknown>;
+    const warnings = result.warnings as string[];
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/total_discount/);
+    expect(warnings[0]).toMatch(/silently dropped/i);
+    expect(warnings[0]).toMatch(/per-item discount/);
+  });
+
   it("Update without shipping_address skips validation entirely", async () => {
     const client = mockClient();
     const args: OrdersToolInput = {

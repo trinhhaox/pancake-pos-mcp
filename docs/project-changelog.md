@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### orders update: items support + total_discount/surcharge silent-drop guards (2026-05-06)
+
+**Scope:** Fix 3 reports against `manage_orders` (update silent-drops items; total_discount no-op; delete 404).
+
+**Root causes:**
+- `items` on `update`: dual-schema mismatch — `tool-registry.ts` exposed `items` to the LLM, but the inner `UpdateAction` (Zod discriminated union) did not declare it, so `.parse()` stripped it before reaching `client.put()`. Pancake API supports replacing items via `PUT /orders/<id>` when order `status === 0` (per `docs/poscake-api-docs.md:264, 284`).
+- `total_discount` / `surcharge`: same class as `shipping_fee`/`partner_fee`/`is_free_shipping`/`customer_pay_fee` — silently dropped or recomputed under `api_key` auth. Not previously surfaced.
+- DELETE 404: not an MCP bug. Endpoint and URL match spec exactly. 404 reflects business state (order absent / wrong shop / `status > 0`). No code change.
+
+**Changes:**
+- `UpdateAction` now accepts `items` (optional). Shape extracted into shared `OrderItemSchema` (DRY with `CreateAction`).
+- Pre-GET `status` check on update when `items` present; throws fast with order id + actual status if `status >= 1` (Pancake constraint).
+- `FRAGILE_FIELDS` extended with `total_discount`, `surcharge` → verify-after-update warnings now surface for these.
+- `tool-registry.ts` inline schema synced (item shape parity with inner schema, action description updated).
+- 4 new tests in `tests/orders-tool.test.ts` covering: items schema acceptance, status===0 happy path, status>=1 rejection, total_discount silent-drop warning.
+
+**API Behavior:** Backward-compatible. New capabilities only.
+
+**Verification:** typecheck clean (`tsc --noEmit`); full vitest suite 61/61 pass.
+
 ### Public-release preparation (2026-04-29)
 
 **Scope:** Git history cleanup and repository preparation for public release.

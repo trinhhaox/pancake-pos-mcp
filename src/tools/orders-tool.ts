@@ -22,16 +22,34 @@ const LOCATION_FIELDS = [
   "new_commune_id",
 ] as const;
 
-// Fields verified to silent-drop on at least one shop with api_key auth.
+// Fields verified (or strongly suspected) to silent-drop under api_key auth.
 // After PUT we GET the order to detect silent-drop and warn the caller.
-const FRAGILE_FIELDS = ["shipping_fee", "partner_fee", "is_free_shipping"] as const;
+const FRAGILE_FIELDS = [
+  "shipping_fee",
+  "partner_fee",
+  "is_free_shipping",
+  "total_discount",
+  "surcharge",
+] as const;
 type FragileField = (typeof FRAGILE_FIELDS)[number];
 
 const WORKAROUND_HINTS: Record<FragileField, string> = {
   shipping_fee: "Try sending with is_free_shipping=false on shops that require it.",
   partner_fee: "Try sending shipping_fee together with partner_fee.",
   is_free_shipping: "Some shops require an explicit shipping_fee value alongside this flag.",
+  total_discount:
+    "Order-level discount may be recomputed from items[].discount_each_product or activated_promotion_advances. Try per-item discount instead.",
+  surcharge: "Often dropped under api_key auth. Verify on a test shop.",
 };
+
+const OrderItemSchema = z.object({
+  quantity: z.coerce.number().int().min(1),
+  variation_id: z.string(),
+  product_id: z.string(),
+  discount_each_product: z.coerce.number().optional(),
+  is_bonus_product: z.boolean().optional(),
+  note: z.string().optional(),
+});
 
 // Enforce at least one province anchor (OLD or NEW) when caller intends to set
 // location. Pure contact updates (phone_number/full_name only) bypass.
@@ -83,14 +101,7 @@ const CreateAction = z.object({
   bill_email: z.string().optional().describe("Buyer email"),
   is_free_shipping: z.boolean().optional(),
   received_at_shop: z.boolean().optional().describe("Customer picks up at shop"),
-  items: z.array(z.object({
-    quantity: z.coerce.number().int().min(1),
-    variation_id: z.string(),
-    product_id: z.string(),
-    discount_each_product: z.coerce.number().optional(),
-    is_bonus_product: z.boolean().optional(),
-    note: z.string().optional(),
-  })).min(1).describe("Order items"),
+  items: z.array(OrderItemSchema).min(1).describe("Order items"),
   note: z.string().optional().describe("Order note"),
   note_print: z.string().optional().describe("Note printed on order"),
   warehouse_id: z.string().describe("Warehouse UUID for order fulfillment"),
@@ -123,12 +134,18 @@ const UpdateAction = z.object({
   is_free_shipping: z.boolean().optional().describe(
     "Free shipping flag. Some shops require sending alongside shipping_fee value.",
   ),
-  total_discount: z.coerce.number().optional(),
+  total_discount: z.coerce.number().optional().describe(
+    "Order-level total discount. Pancake may recompute from per-item discount or active promotions; verify-after-update will warn on silent-drop.",
+  ),
   surcharge: z.coerce.number().optional(),
   note_print: z.string().optional().describe("Note printed on order receipt"),
   received_at_shop: z.boolean().optional().describe("Customer pickup at shop"),
   custom_id: z.string().optional(),
   bill_email: z.string().optional(),
+  items: z.array(OrderItemSchema).optional().describe(
+    "Replace order items. Pancake only allows item changes when order status === 0 (Mới). " +
+      "Pre-check enforces this and fails fast.",
+  ),
   // NOTE: customer_pay_fee intentionally excluded — Pancake api_key auth
   // silently drops this field (verified 2026-04-28 on shop 123456789).
 });
@@ -198,6 +215,16 @@ export async function handleOrdersTool(args: OrdersToolInput, client: PancakeHtt
       const { action, order_id, ...body } = args;
       if (body.shipping_address) {
         assertAddressHasLocation(body.shipping_address, "update");
+      }
+      if (body.items !== undefined) {
+        const current = await client.get<{ status?: number }>(`orders/${order_id}`);
+        const status = current.data.status ?? 0;
+        if (status >= 1) {
+          throw new Error(
+            `Cannot change items: order ${order_id} is at status ${status}. ` +
+              `Pancake only allows item changes when status === 0 (Mới).`,
+          );
+        }
       }
       const putResult = await client.put<Record<string, unknown>>(`orders/${order_id}`, body);
 

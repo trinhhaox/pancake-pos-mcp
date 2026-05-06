@@ -36,7 +36,7 @@ export function registerAllTools(server: McpServer, client: PancakeHttpClient): 
 
   server.tool(
     "manage_orders",
-    "Manage orders in Pancake POS. Actions: list (with filters/pagination/sorting), get (by ID), create, update, delete, print (generate PDF), ship (send to delivery partner), call_later (schedule callback).",
+    "Manage orders in Pancake POS. Actions: list (with filters/pagination/sorting), get (by ID), create, update (supports items replacement when status===0), delete (only status===0 orders), print (generate PDF), ship (send to delivery partner), call_later (schedule callback).",
     {
       action: z.enum(["list", "get", "create", "update", "delete", "print", "ship", "call_later"]).describe("Action to perform"),
       order_id: z.coerce.number().int().optional().describe("Order ID (required for get/update/delete/print/ship)"),
@@ -51,7 +51,16 @@ export function registerAllTools(server: McpServer, client: PancakeHttpClient): 
       // create/update params
       bill_full_name: z.string().optional().describe("Buyer name (required for create)"),
       bill_phone_number: z.string().optional().describe("Buyer phone (required for create)"),
-      items: z.array(z.object({ quantity: z.coerce.number(), variation_id: z.string(), product_id: z.string() })).optional().describe("Order items (required for create)"),
+      items: z.array(z.object({
+        quantity: z.coerce.number().int().min(1),
+        variation_id: z.string(),
+        product_id: z.string(),
+        discount_each_product: z.coerce.number().optional(),
+        is_bonus_product: z.boolean().optional(),
+        note: z.string().optional(),
+      })).optional().describe(
+        "Order items. Required for create. On update, replaces items[] (allowed only when order status === 0 — pre-check enforces).",
+      ),
       warehouse_id: z.string().optional().describe("Warehouse UUID"),
       shipping_address: z.record(z.string(), z.unknown()).optional().describe(
         "Shipping address. Fields: full_name, phone_number, address (street). Location: OLD format (province_id+district_id+commune_id) or NEW format post-2025-07-01 (new_province_id+new_commune_id; no district level). Server detects format by ID prefix.",
@@ -63,8 +72,12 @@ export function registerAllTools(server: McpServer, client: PancakeHttpClient): 
       shipping_fee: z.coerce.number().optional().describe("Shipping fee (update). Some shops require sending is_free_shipping together — verify-after-update will warn on silent-drop."),
       partner_fee: z.coerce.number().optional().describe("Partner shipping fee (update)."),
       is_free_shipping: z.boolean().optional().describe("Free shipping flag (create/update)."),
-      total_discount: z.coerce.number().optional().describe("Total order discount (create/update)."),
-      surcharge: z.coerce.number().optional().describe("Order surcharge (create/update)."),
+      total_discount: z.coerce.number().optional().describe(
+        "Total order discount (create/update). May be silently dropped or recomputed under api_key auth — verify-after-update warns. Workaround: per-item discount.",
+      ),
+      surcharge: z.coerce.number().optional().describe(
+        "Order surcharge (create/update). May be silently dropped under api_key auth — verify-after-update warns.",
+      ),
       note_print: z.string().optional().describe("Note printed on order receipt (create/update/ship)."),
       received_at_shop: z.boolean().optional().describe("Customer pickup at shop (create/update)."),
       custom_id: z.string().optional().describe("Custom order ID (create/update)."),
