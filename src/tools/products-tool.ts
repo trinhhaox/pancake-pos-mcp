@@ -118,8 +118,11 @@ export async function handleProductsTool(args: ProductsToolInput, client: Pancak
       return { success: true, message: `Product ${args.product_id} deleted` };
     }
     case "list_variations": {
-      const result = await client.get(`products/${args.product_id}/variations`);
-      return result.data;
+      // Pancake POS does not expose /products/{id}/variations as a sub-resource
+      // (verified 2026-05-06: returns 404). Variations live embedded in the
+      // product GET response, so we fetch the product and project the array.
+      const result = await client.get<{ variations?: unknown[] }>(`products/${args.product_id}`);
+      return { data: result.data.variations ?? [] };
     }
     case "create_variation": {
       const { action, product_id, ...body } = args;
