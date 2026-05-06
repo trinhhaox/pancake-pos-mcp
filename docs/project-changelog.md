@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Analytics gap fix: array serialization + sort enum + aggs preservation + analytics tool (2026-05-06)
+
+**Scope:** 4 phases addressing array query param serialization bug, sort options enum, server-side aggregation forwarding, and new analytics wrapper tool.
+
+**Phase 1 — Array Serialization Bug**
+- **Issue:** Query arrays were JSON-stringified (`key=["a","b"]`), triggering HTTP 500 on Pancake list endpoints (expects bracket-style `key[]=a&key[]=b`).
+- **Fix:** `buildQueryParams()` now returns `URLSearchParams`, iterates arrays with `sp.append(key[], value)`. Empty arrays omitted; nested arrays preserve inner JSON.
+- `api-client/request-builder.ts`: new `buildQueryParams()` signature + bracket-style serialization
+- `tests/api-client/request-builder.test.ts` (new): 12 cases covering arrays, empty arrays, nested arrays, nulls
+
+**Phase 2 — Sort Options Enum + Tool Descriptions**
+- `src/shared/sort-options.ts` (new): `ORDER_SORT_VALUES` (18 enum values), `ORDER_SORT_DESCRIPTION` with analytics pattern examples
+- `orders-tool.ts`: `option_sort` switched `z.string()` → `z.enum(ORDER_SORT_VALUES)`; expanded fields description
+- `tool-registry.ts`: synced inline schema + added "ANALYTICS PATTERNS" and "RESPONSE INCLUDES SERVER-SIDE AGGREGATIONS" blocks to `manage_orders` description (dual-schema gotcha)
+- `tests/tools/orders-tool-schema.test.ts` (new): 4 cases for enum validation
+
+**Phase 3 — Preserve Server-Side Aggregations**
+- `schemas.ts`: added `PancakeAggregationValue` (union of numeric value or bucket array), `PancakeAggregations` map, `PancakeListResponse.aggs?` optional field
+- `response-parser.ts`: `parsePaginatedResponse()` forwards `aggs` from body when present
+- `pagination-helpers.ts`: `formatPaginatedResult()` forwards `aggs` (additive, backward-compatible; only when present)
+- `tests/shared/pagination-helpers.test.ts` + `tests/api-client/response-parser.test.ts` (new): 6 cases
+
+**Phase 4 — Analytics Wrapper Tool**
+- `tools/analytics-tool.ts` (new): single `analytics` tool with discriminated union
+  - `top_orders` action: metric (total_price|total_quantity), limit (1-100), date range, status filter, fields override. Uses sort + page_size for single-call top-N
+  - `revenue_summary` action: returns revenue_cod, prepaid, shipping_fee, partner_fee, total_orders, status_breakdown, currency="VND"
+- `tool-registry.ts`: registers `analytics` tool (24 total now)
+- `tests/tools/analytics-tool.test.ts` (new): 12 cases
+- `tests/e2e-mcp.test.ts`: bumped tool count 23→24; asserts `analytics` registered
+- `README.md` + `codebase-summary.md` (previous): already updated tool count references
+
+**Test Status:** 95/95 vitest pass, `tsc --noEmit` clean.
+
+**API Behavior:** Fully backward-compatible. New features only.
+
 ### orders update: items support + total_discount/surcharge silent-drop guards (2026-05-06)
 
 **Scope:** Fix 3 reports against `manage_orders` (update silent-drops items; total_discount no-op; delete 404).

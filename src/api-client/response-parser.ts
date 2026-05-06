@@ -1,5 +1,5 @@
 import { PancakeApiError } from "../shared/error-handler.js";
-import type { PancakeListResponse, PancakeResponse } from "../shared/schemas.js";
+import type { PancakeAggregations, PancakeListResponse, PancakeResponse } from "../shared/schemas.js";
 
 /**
  * Parse a Pancake API response, extracting data and handling errors.
@@ -46,7 +46,7 @@ export async function parsePaginatedResponse<T>(response: Response): Promise<Pan
     );
   }
 
-  return {
+  const result: PancakeListResponse<T> = {
     data: (json.data ?? []) as T[],
     success: true,
     page_number: (json.page_number as number) ?? 1,
@@ -54,6 +54,10 @@ export async function parsePaginatedResponse<T>(response: Response): Promise<Pan
     total_entries: (json.total_entries as number) ?? 0,
     total_pages: (json.total_pages as number) ?? 0,
   };
+  if (json.aggs && typeof json.aggs === "object") {
+    result.aggs = json.aggs as PancakeAggregations;
+  }
+  return result;
 }
 
 function mapHttpStatusToCode(status: number): string {

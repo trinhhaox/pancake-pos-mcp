@@ -1,21 +1,28 @@
 /**
- * Builds query string parameters from a flat object, handling arrays and null/undefined values.
+ * Builds query string parameters from a flat object.
+ * Pancake API expects array params as bracket-style repeated keys (`key[]=v1&key[]=v2`).
+ * Sending JSON-encoded arrays triggers HTTP 500 on list endpoints.
+ * Nested arrays (e.g. `order_sources=[["-1","314"]]`) keep their inner element as JSON
+ * since the wire grouping must be preserved.
  */
-export function buildQueryParams(params: Record<string, unknown>): Record<string, string> {
-  const result: Record<string, string> = {};
+export function buildQueryParams(params: Record<string, unknown>): URLSearchParams {
+  const sp = new URLSearchParams();
 
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null) continue;
 
     if (Array.isArray(value)) {
-      // Pancake API expects arrays as JSON-encoded strings in query params
-      result[key] = JSON.stringify(value);
+      if (value.length === 0) continue;
+      for (const v of value) {
+        const encoded = Array.isArray(v) ? JSON.stringify(v) : String(v);
+        sp.append(`${key}[]`, encoded);
+      }
     } else {
-      result[key] = String(value);
+      sp.set(key, String(value));
     }
   }
 
-  return result;
+  return sp;
 }
 
 /**
@@ -49,9 +56,9 @@ export function buildRequestUrl(
 
   if (queryParams) {
     const built = buildQueryParams(queryParams);
-    for (const [key, value] of Object.entries(built)) {
-      url.searchParams.set(key, value);
-    }
+    built.forEach((value, key) => {
+      url.searchParams.append(key, value);
+    });
   }
 
   return url.toString();

@@ -37,7 +37,7 @@ describe("MCP Protocol E2E", () => {
 });
 
 describe("MCP Tools", () => {
-  it("lists all 23 tools", async () => {
+  it("lists all 24 tools", async () => {
     const res = await SELF.fetch(
       "http://localhost/mcp",
       mcpRequest("tools/list"),
@@ -46,7 +46,7 @@ describe("MCP Tools", () => {
     const json = (await res.json()) as {
       result?: { tools: Array<{ name: string }> };
     };
-    expect(json.result?.tools.length).toBe(23);
+    expect(json.result?.tools.length).toBe(24);
 
     const names = json.result?.tools.map((t) => t.name) ?? [];
     expect(names).toContain("manage_orders");
@@ -55,6 +55,7 @@ describe("MCP Tools", () => {
     expect(names).toContain("lookup_address");
     expect(names).toContain("get_shop_info");
     expect(names).toContain("manage_webhooks");
+    expect(names).toContain("analytics");
   });
 });
 

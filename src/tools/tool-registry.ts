@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PancakeHttpClient } from "../api-client/pancake-http-client.js";
 import { formatToolError } from "../shared/error-handler.js";
 import { ordersToolSchema, handleOrdersTool } from "./orders-tool.js";
+import { ORDER_SORT_VALUES, ORDER_SORT_DESCRIPTION } from "../shared/sort-options.js";
 import { productsToolSchema, handleProductsTool } from "./products-tool.js";
 import { customersToolSchema, handleCustomersTool } from "./customers-tool.js";
 import { inventoryToolSchema, handleInventoryTool } from "./inventory-tool.js";
@@ -25,6 +26,7 @@ import { webhooksToolSchema, handleWebhooksTool } from "./webhooks-tool.js";
 import { statisticsToolSchema, handleStatisticsTool } from "./statistics-tool.js";
 import { shopInfoToolSchema, handleShopInfoTool } from "./shop-info-tool.js";
 import { addressLookupToolSchema, handleAddressLookupTool } from "./address-lookup-tool.js";
+import { analyticsToolSchema, handleAnalyticsTool } from "./analytics-tool.js";
 
 /**
  * Register all Pancake POS tools with the MCP server.
@@ -36,7 +38,23 @@ export function registerAllTools(server: McpServer, client: PancakeHttpClient): 
 
   server.tool(
     "manage_orders",
-    "Manage orders in Pancake POS. Actions: list (with filters/pagination/sorting), get (by ID), create, update (supports items replacement when status===0), delete (only status===0 orders), print (generate PDF), ship (send to delivery partner), call_later (schedule callback).",
+    `Manage orders in Pancake POS. Actions: list (filters/pagination/sort/projection), get (by ID), create, update (items replacement when status===0), delete (status===0), print, ship, call_later.
+
+RESPONSE INCLUDES SERVER-SIDE AGGREGATIONS (no extra call):
+- aggs.cod.value          → total COD across filtered orders (VND)
+- aggs.shipping_fee.value → total shipping fee
+- aggs.prepaid.value      → total prepaid
+- aggs.partner_fee.value  → total partner fee
+- aggs.status.buckets     → [{key: status_code, doc_count}] count per status
+For revenue/total/count queries: read aggs instead of looping pagination.
+
+ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
+- Top order by total in last year:
+    list({ option_sort: "order_valuation_desc", page_size: 1, fields: ["id","total_price","bill_full_name","inserted_at"], startDateTime, endDateTime })
+- Newest order of customer:
+    list({ customer_id, option_sort: "inserted_at_desc", page_size: 1, fields: ["id","total_price","inserted_at"] })
+- Top 10 by item count this month:
+    list({ option_sort: "product_quantity_desc", page_size: 10, fields: ["id","product_quantity","total_price"], startDateTime, endDateTime })`,
     {
       action: z.enum(["list", "get", "create", "update", "delete", "print", "ship", "call_later"]).describe("Action to perform"),
       order_id: z.coerce.number().int().optional().describe("Order ID (required for get/update/delete/print/ship)"),
@@ -47,7 +65,13 @@ export function registerAllTools(server: McpServer, client: PancakeHttpClient): 
       page_size: z.coerce.number().int().optional().describe("Items per page (default 30)"),
       startDateTime: z.coerce.number().int().optional().describe("Start date unix timestamp"),
       endDateTime: z.coerce.number().int().optional().describe("End date unix timestamp"),
-      option_sort: z.string().optional().describe("Sort order e.g. inserted_at_desc"),
+      option_sort: z.enum(ORDER_SORT_VALUES).optional().describe(ORDER_SORT_DESCRIPTION),
+      fields: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Project specific fields (slashes payload ~95%). Example: ["id","total_price","bill_full_name","inserted_at"].',
+        ),
       // create/update params
       bill_full_name: z.string().optional().describe("Buyer name (required for create)"),
       bill_phone_number: z.string().optional().describe("Buyer phone (required for create)"),
@@ -670,6 +694,48 @@ export function registerAllTools(server: McpServer, client: PancakeHttpClient): 
       try {
         const parsed = shopInfoToolSchema.parse(args);
         const result = await handleShopInfoTool(parsed, client);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+      } catch (error) {
+        return formatToolError(error);
+      }
+    },
+  );
+
+  server.tool(
+    "analytics",
+    `Purpose-built analytics over Pancake POS orders. Single call, no pagination, no client-side aggregation. USE THIS FOR: top-N orders, revenue/total queries.
+
+Actions:
+- top_orders: Find top N orders by metric (total_price | total_quantity). Optional date range + status filter. Thin response with id/total_price/inserted_at/customer name.
+- revenue_summary: Revenue + count + status breakdown for a date range using server-side Elasticsearch aggregations. Returns revenue_cod (cash-on-delivery), prepaid, shipping_fee, partner_fee, total_orders, status_breakdown. Currency: VND.
+
+Examples:
+- Top 5 orders by total this year: analytics({ action: "top_orders", metric: "total_price", limit: 5, startDateTime, endDateTime })
+- Largest order ever: analytics({ action: "top_orders", metric: "total_price", limit: 1 })
+- Revenue this month: analytics({ action: "revenue_summary", startDateTime, endDateTime })
+- Delivered-only revenue: analytics({ action: "revenue_summary", startDateTime, endDateTime, filter_status: [3] })`,
+    {
+      action: z.enum(["top_orders", "revenue_summary"]).describe("Analytics action"),
+      metric: z
+        .enum(["total_price", "total_quantity"])
+        .optional()
+        .describe("top_orders only: ranking metric (default total_price)"),
+      limit: z.coerce.number().int().min(1).max(100).optional().describe("top_orders only: N (default 10, max 100)"),
+      startDateTime: z.coerce.number().int().optional().describe("Start unix timestamp (required for revenue_summary)"),
+      endDateTime: z.coerce.number().int().optional().describe("End unix timestamp (required for revenue_summary)"),
+      filter_status: z
+        .array(z.coerce.number().int())
+        .optional()
+        .describe("Filter by status codes, e.g. [3] for delivered"),
+      fields: z
+        .array(z.string())
+        .optional()
+        .describe("top_orders only: override returned fields"),
+    },
+    async (args) => {
+      try {
+        const parsed = analyticsToolSchema.parse(args);
+        const result = await handleAnalyticsTool(parsed, client);
         return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
       } catch (error) {
         return formatToolError(error);

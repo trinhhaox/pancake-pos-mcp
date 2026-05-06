@@ -9,7 +9,7 @@
 
 ## Executive Summary
 
-Pancake POS MCP implementation is **feature-complete** with all 23 tools deployed across 5 business phases. The project has transitioned from active development to testing, documentation refinement, and operational optimization.
+Pancake POS MCP implementation is **feature-complete** with all 24 tools deployed across 5 business phases + analytics enhancements. The project has transitioned from active development to testing, documentation refinement, and operational optimization.
 
 ### Project Status Snapshot
 
@@ -20,7 +20,7 @@ Pancake POS MCP implementation is **feature-complete** with all 23 tools deploye
 | Phase 3: Sales Extensions | Complete | 100% |
 | Phase 4: CRM & Multi-Channel | Complete | 100% |
 | Phase 5: Operations | Complete | 100% |
-| **Total Tools Implemented** | **23/23** | **100%** |
+| **Total Tools Implemented** | **24/24** | **100%** (including analytics wrapper) |
 | **Total Resources** | **7/7** | **100%** |
 | Documentation | In Progress | 95% |
 | Unit Testing | Not Started | 0% |
@@ -120,7 +120,24 @@ Pancake POS MCP implementation is **feature-complete** with all 23 tools deploye
 
 ---
 
-## Current Milestone: Public Release Readiness (2026-04-29)
+## Current Milestone: Analytics Gap Fix (2026-05-06)
+
+**Status:** Completed (array serialization, sort enum, aggs preservation, analytics tool)
+
+### Completion
+- [x] Array serialization bug fixed (bracket-style params)
+- [x] Sort options enum added (18 values, ORDER_SORT_DESCRIPTION)
+- [x] Server-side aggregations forwarded (aggs field preserved in responses)
+- [x] Analytics wrapper tool added (top_orders, revenue_summary)
+- [x] Tool count 23→24
+- [x] All tests passing (95/95 vitest, tsc clean)
+- [x] Documentation updated
+
+**Impact:** Single-call analytics queries now possible; list endpoints expose server-side aggregations for revenue/status breakdowns.
+
+---
+
+## Previous Milestone: Public Release Readiness (2026-04-29)
 
 **Status:** Repository prepared for public distribution on GitHub
 
@@ -153,7 +170,7 @@ Pancake POS MCP implementation is **feature-complete** with all 23 tools deploye
 
 ### Completion Criteria
 
-- [x] All 23 tools implemented
+- [x] All 24 tools implemented
 - [x] All 7 resources implemented
 - [x] TypeScript strict mode (0 errors)
 - [x] Rate limiting & retries working
@@ -334,7 +351,7 @@ Pancake POS MCP implementation is **feature-complete** with all 23 tools deploye
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Tools Implemented | 23 | ✓ 100% |
+| Tools Implemented | 24 | ✓ 100% |
 | Resources Implemented | 7 | ✓ 100% |
 | TypeScript Compilation | 0 errors | ✓ Pass |
 | Code Standards Compliance | 100% | ✓ Pass |

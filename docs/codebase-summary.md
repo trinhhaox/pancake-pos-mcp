@@ -8,10 +8,10 @@
 
 ## Executive Overview
 
-The Pancake POS MCP server is a Model Context Protocol implementation that wraps the Pancake POS REST API with **23 specialized tools** organized in 5 development phases. The server provides both **stdio** and **Streamable HTTP** transport options, making it compatible with Claude and other AI assistants for POS management automation.
+The Pancake POS MCP server is a Model Context Protocol implementation that wraps the Pancake POS REST API with **24 specialized tools** organized in 5 development phases. The server provides both **stdio** and **Streamable HTTP** transport options, making it compatible with Claude and other AI assistants for POS management automation.
 
 ### Key Metrics
-- **23 MCP Tools** across 5 business domains
+- **24 MCP Tools** across 5 business domains (Phase 5 + analytics wrapper)
 - **7 Static Reference Resources** (order statuses, shipping partners, webhook events, etc.)
 - **Rate Limiting:** 1,000 requests/minute, 10,000 requests/hour (token-bucket algorithm)
 - **Retry Strategy:** 3 attempts with exponential backoff (1s → 2s → 4s)
@@ -28,7 +28,7 @@ src/
 │   ├── pancake-http-client.ts      # Main HTTP client (token-bucket, exponential backoff)
 │   ├── request-builder.ts           # URL construction with path encoding
 │   └── response-parser.ts           # Response parsing & error handling
-├── tools/                   # 23 MCP tools organized by phase
+├── tools/                   # 24 MCP tools organized by phase
 │   ├── Phase 1 (Core POS)
 │   │   ├── orders-tool.ts           # Order CRUD + print/ship/call_later
 │   │   ├── products-tool.ts         # Product CRUD + variations
@@ -56,15 +56,17 @@ src/
 │   │   ├── webhooks-tool.ts         # Event subscription management
 │   │   ├── statistics-tool.ts       # Analytics (inventory/sales/orders)
 │   │   ├── shop-info-tool.ts        # Shop profile get/update
-│   │   └── address-lookup-tool.ts   # Vietnamese address hierarchy
-│   └── tool-registry.ts             # Registers all 23 tools with MCP server
+│   │   ├── address-lookup-tool.ts   # Vietnamese address hierarchy
+│   │   └── analytics-tool.ts        # Analytics wrapper (top_orders, revenue_summary) + aggs extraction
+│   └── tool-registry.ts             # Registers all 24 tools with MCP server
 ├── resources/               # Static reference data as MCP Resources
 │   ├── reference-data-resources.ts  # Data definitions (order statuses, error codes, etc.)
 │   └── resource-registry.ts         # Registers 7 resources
 ├── shared/                  # Shared utilities
-│   ├── schemas.ts                   # Zod type definitions
+│   ├── schemas.ts                   # Zod type definitions (PancakeAggregations, VietnamAddressSchema, etc.)
+│   ├── sort-options.ts              # ORDER_SORT_VALUES enum (18 values) + analytics sort mapping
 │   ├── error-handler.ts             # PancakeApiError + formatToolError
-│   └── pagination-helpers.ts        # Pagination result formatting
+│   └── pagination-helpers.ts        # Pagination result formatting (forwards aggs field)
 ├── config.ts                # Configuration (BASE_URL, API_KEY, SHOP_ID)
 ├── server.ts                # MCP server factory function
 ├── index.ts                 # Entry point (Bun: stdio + HTTP bootstrap)
@@ -88,7 +90,7 @@ Each tool uses **two schemas for compatibility**:
 - **Discriminated Union Schema** (Zod): Strict runtime validation with exact type checking
 - **Flat Raw Schema** (MCP registration): Compatible with JSON Schema generation
 
-Example pattern (seen in all 23 tools):
+Example pattern (seen in all 24 tools):
 ```typescript
 // Handler receives discriminated union (strict runtime validation)
 const parsed = ordersToolSchema.parse(args);
@@ -207,18 +209,18 @@ Tool handlers wrap results in `formatToolError()`, which MCP SDK parses as tool 
 | File | Lines | Responsibility |
 |------|-------|-----------------|
 | `api-client/pancake-http-client.ts` | ~150 | Rate limiting, retries, fetch orchestration |
-| `api-client/request-builder.ts` | ~80 | URL construction, path encoding, auth injection |
-| `api-client/response-parser.ts` | ~60 | JSON parsing, error detection, pagination wrapping |
+| `api-client/request-builder.ts` | ~73 | URL construction, bracket-style array params, path encoding, auth injection |
+| `api-client/response-parser.ts` | ~73 | JSON parsing, error detection, pagination + aggs forwarding |
 
 ### MCP Integration
 | File | Lines | Responsibility |
 |------|-------|-----------------|
-| `tools/tool-registry.ts` | ~670 | Registers all 23 tools; core MCP integration |
+| `tools/tool-registry.ts` | ~670 | Registers all 24 tools; core MCP integration |
 | `resources/resource-registry.ts` | ~110 | Registers 7 static/dynamic resources |
 | `server.ts` | ~20 | MCP server factory |
 | `index.ts` | ~100+ | Bootstrap (stdio/HTTP), config loading |
 
-### Tools (23 implementations)
+### Tools (24 implementations)
 Each tool file (~80-120 lines):
 - Zod schema definition
 - Handler function with API calls
@@ -266,6 +268,45 @@ Each tool file (~80-120 lines):
 
 ---
 
+## Recent Enhancements (2026-05-06)
+
+### 1. Array Serialization Fix (Phase 1)
+**Issue:** Query parameters with arrays were JSON-stringified, triggering HTTP 500 on Pancake API list endpoints.
+
+**Solution:** `buildQueryParams()` now returns `URLSearchParams` and serializes arrays as bracket-style `key[]=v1&key[]=v2`. Empty arrays are omitted. Nested arrays keep inner elements as JSON (e.g. `order_sources=[["-1","314"]]` preserves wire grouping).
+
+**Files:** `api-client/request-builder.ts`
+
+### 2. Sort Options Enum (Phase 2)
+**Addition:** `src/shared/sort-options.ts` exports `ORDER_SORT_VALUES` (18 enum values) and `ORDER_SORT_DESCRIPTION`. 
+
+**Impact:** `orders-tool.ts` `option_sort` parameter now uses `z.enum(ORDER_SORT_VALUES)` for strict validation. Tool descriptions expanded to document ANALYTICS PATTERNS (top-N queries with single API call using sort + page_size + fields[]).
+
+**Files:** `shared/sort-options.ts`, `tools/orders-tool.ts`, `tools/tool-registry.ts`
+
+### 3. Preserve Server-Side Aggregations (Phase 3)
+**Feature:** Pancake API list endpoints return optional `aggs` (aggregation buckets) alongside paginated data.
+
+**Solution:** 
+- `PancakeListResponse.aggs?` field added (type `PancakeAggregations`)
+- `parsePaginatedResponse()` forwards `aggs` when present
+- `formatPaginatedResult()` forwards `aggs` (only if present; backward-compatible)
+
+**Files:** `shared/schemas.ts`, `api-client/response-parser.ts`, `shared/pagination-helpers.ts`
+
+### 4. Analytics Wrapper Tool (Phase 4)
+**New Tool:** `analytics` (single tool with discriminated union `action`).
+
+**Actions:**
+- `top_orders` — Metric-driven ranking (total_price/total_quantity), limit, date range, status filter, custom fields
+- `revenue_summary` — Revenue breakdown by payment method (cod, prepaid, shipping_fee, partner_fee) + status_breakdown aggregation
+
+**Implementation:** Leverages aggs preservation + sort options; analytics queries execute in 1 API call (no pagination loops).
+
+**Files:** `tools/analytics-tool.ts`, `tools/tool-registry.ts` (24 tools now)
+
+---
+
 ## Data Flow Patterns
 
 ### List Operations (Paginated)
@@ -276,11 +317,11 @@ Handler parses params
   ↓
 client.getList(path, params)  // Injects auth, rate limits, retries
   ↓
-parsePaginatedResponse()  // Validates { error, status, data[], ... }
+parsePaginatedResponse()  // Validates { error, status, data[], aggs?, ... }
   ↓
-formatPaginatedResult(data, pagination)  // Wraps for MCP
+formatPaginatedResult(data, pagination, aggs?)  // Wraps for MCP
   ↓
-Tool returns text JSON
+Tool returns text JSON (includes aggs if server sent them)
 ```
 
 ### Single Item Operations (Get/Create/Update)

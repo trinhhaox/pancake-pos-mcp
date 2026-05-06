@@ -7,6 +7,7 @@ import {
   VietnamAddressSchema,
   type VietnamAddress,
 } from "../shared/schemas.js";
+import { ORDER_SORT_VALUES, ORDER_SORT_DESCRIPTION } from "../shared/sort-options.js";
 
 const CreateShippingAddressSchema = VietnamAddressSchema.extend({
   full_name: z.string(),
@@ -80,8 +81,13 @@ const ListAction = z.object({
   filter_status: z.array(z.coerce.number().int()).optional().describe("Filter by status codes (e.g. [0,1])"),
   include_removed: z.literal(1).optional().describe("Set to 1 to include deleted orders"),
   updateStatus: z.string().optional().describe("Filter by time type: inserted_at, updated_at, paid_at, etc."),
-  option_sort: z.string().optional().describe("Sort order, e.g. inserted_at_desc, order_valuation_desc"),
-  fields: z.array(z.string()).optional().describe("Specific fields to return"),
+  option_sort: z.enum(ORDER_SORT_VALUES).optional().describe(ORDER_SORT_DESCRIPTION),
+  fields: z
+    .array(z.string())
+    .optional()
+    .describe(
+      'Project specific fields (Elasticsearch _source). Slashes ~95% payload. Example: ["id","total_price","bill_full_name","inserted_at"].',
+    ),
   partner_id: z.array(z.coerce.number().int()).optional().describe("Filter by shipping partner IDs"),
   customer_id: z.string().optional().describe("Filter by customer UUID"),
   order_sources: z.array(z.array(z.string())).optional().describe("Filter by source [[source_code, account_id]]"),

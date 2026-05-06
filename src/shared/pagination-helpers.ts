@@ -1,4 +1,4 @@
-import type { PancakeListResponse, PaginationMeta } from "./schemas.js";
+import type { PancakeAggregations, PancakeListResponse, PaginationMeta } from "./schemas.js";
 
 /**
  * Extract pagination metadata from a Pancake list response.
@@ -14,13 +14,18 @@ export function extractPagination(response: PancakeListResponse<unknown>): Pagin
 
 /**
  * Format a paginated tool result with data + pagination info.
+ * `aggs` (Elasticsearch server-side aggregations) is forwarded when present so
+ * callers can answer revenue/count queries without paginating.
  */
 export function formatPaginatedResult<T>(response: PancakeListResponse<T>): {
   data: T[];
   pagination: PaginationMeta;
+  aggs?: PancakeAggregations;
 } {
-  return {
+  const result: { data: T[]; pagination: PaginationMeta; aggs?: PancakeAggregations } = {
     data: response.data,
     pagination: extractPagination(response),
   };
+  if (response.aggs) result.aggs = response.aggs;
+  return result;
 }

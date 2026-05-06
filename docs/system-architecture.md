@@ -1,8 +1,8 @@
 # Pancake POS MCP - System Architecture
 
 **Version:** 0.1.0  
-**Last Updated:** 2026-04-10  
-**Status:** Complete (All 5 phases implemented and reviewed)
+**Last Updated:** 2026-05-06  
+**Status:** Complete (All 5 phases + analytics features implemented and reviewed)
 
 ---
 
@@ -35,7 +35,7 @@
         │                    │                  │
    ┌────▼────────┐  ┌───────▼─────────┐  ┌────▼────────┐
    │ Tool Registry│  │Resource Registry│  │Error Handler│
-   │  (23 tools)  │  │ (7 resources)   │  │             │
+   │  (24 tools)  │  │ (7 resources)   │  │             │
    └────┬────────┘  └───────┬─────────┘  └─────────────┘
         │                   │
    ┌────▼─────────────────────────────────┐
@@ -77,10 +77,10 @@
 
 ---
 
-## 2. Tool Architecture (23 MCP Tools)
+## 2. Tool Architecture (24 MCP Tools)
 
 ### Tool Registration Pattern
-Each of the 23 tools follows this pattern:
+Each of the 24 tools follows this pattern:
 
 ```typescript
 // 1. Zod Schema (discriminated union for runtime validation)
@@ -125,7 +125,7 @@ server.tool(
 );
 ```
 
-### The 23 Tools Organized by Phase
+### The 24 Tools Organized by Phase
 
 #### Phase 1: Core POS (4 tools)
 1. **manage_orders** (80+ lines)
@@ -228,6 +228,10 @@ server.tool(
     - Actions: provinces, districts, communes
     - Vietnamese administrative hierarchy lookup
 
+24. **analytics** (50+ lines)
+    - Actions: top_orders, revenue_summary
+    - Analytics wrapper leveraging server-side aggregations + sort options for efficient single-call top-N queries and revenue breakdowns
+
 ---
 
 ## 3. HTTP Client Architecture
@@ -279,9 +283,10 @@ Request Input:
 URL Construction (Request Builder):
   1. Base: https://api.pos.poscake.vn
   2. Path segment encoding: /shops/{encoded_shopId}/orders
-  3. Auth injection: ?shop_id=X&access_token=Y
-  4. Query params: &search=12345&page=1&limit=30
-  Final: https://api.pos.poscake.vn/shops/.../orders?search=...&access_token=...
+  3. Auth injection: ?api_key=X
+  4. Query params (bracket-style arrays): &search=12345&page=1&page_size=30&filter_status[]=1&filter_status[]=2
+     (Arrays serialized as key[]=v1&key[]=v2, NOT key=["v1","v2"])
+  Final: https://api.pos.poscake.vn/shops/.../orders?search=...&api_key=...&filter_status[]=1&filter_status[]=2
 
   ↓
 
@@ -308,6 +313,21 @@ Response Parsing:
 
 Result Returned (via tool handler)
 ```
+
+### Query Parameter Serialization (Bracket-Style Arrays)
+
+**Critical Detail:** Pancake API requires array parameters as bracket-style repeated keys:
+- ✓ Correct: `filter_status[]=1&filter_status[]=2&filter_status[]=3`
+- ✗ Wrong: `filter_status=["1","2","3"]` (triggers HTTP 500)
+
+**Implementation** (`request-builder.ts:buildQueryParams`):
+```typescript
+// Flat array: [1, 2, 3] → key[]=1, key[]=2, key[]=3
+// Nested array: [["a","b"], ["c","d"]] → key[]=["a","b"], key[]=["c","d"] (preserve JSON grouping)
+// Empty array: [] → omitted (skip entirely)
+```
+
+**Rationale:** Wire format must match Pancake server expectations (bracket notation with URLSearchParams).
 
 ### Exponential Backoff on Server Error
 

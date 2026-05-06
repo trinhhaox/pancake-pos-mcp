@@ -15,7 +15,7 @@ src/
 │   ├── pancake-http-client.ts       # Main HTTP client (rate limiter, retries)
 │   ├── request-builder.ts           # URL construction
 │   └── response-parser.ts           # Response parsing
-├── tools/                   # 23 MCP tools
+├── tools/                   # 24 MCP tools
 │   ├── orders-tool.ts
 │   ├── products-tool.ts
 │   ├── ... (20 more)

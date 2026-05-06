@@ -1,6 +1,6 @@
 # Pancake POS MCP
 
-Model Context Protocol (MCP) server wrapping the Pancake POS REST API, enabling AI assistants like Claude to manage Vietnamese e-commerce POS operations with 23 specialized tools and 7 reference resources.
+Model Context Protocol (MCP) server wrapping the Pancake POS REST API, enabling AI assistants like Claude to manage Vietnamese e-commerce POS operations with 24 specialized tools and 7 reference resources.
 
 ## Overview
 
@@ -203,7 +203,7 @@ Static reference resources (no authentication required):
 ## Architecture
 
 - **API Client:** Token-bucket rate limiting (1000/min, 10000/hour), exponential backoff retries (3 attempts)
-- **Tools:** 23 MCP tools organized by business domain
+- **Tools:** 24 MCP tools organized by business domain
 - **Schema Validation:** Zod with discriminated unions for strict runtime validation
 - **Transport:** Stdio (default) + Streamable HTTP + Cloudflare Workers with optional Bearer token auth
 - **Error Handling:** Structured error responses with code and message
@@ -230,7 +230,7 @@ src/
 │   ├── pancake-http-client.ts
 │   ├── request-builder.ts
 │   └── response-parser.ts
-├── tools/                   # 23 MCP tools (23 files)
+├── tools/                   # 24 MCP tools (24 files)
 ├── resources/               # MCP reference resources
 ├── shared/                  # Schemas, errors, pagination
 ├── config.ts                # Environment configuration

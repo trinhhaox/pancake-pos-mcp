@@ -12,6 +12,16 @@ export const DateRangeParams = z.object({
   endDateTime: z.coerce.number().int().optional().describe("End date as unix timestamp"),
 });
 
+// Server-side Elasticsearch aggregations attached to list responses.
+// Shape varies per endpoint: orders expose cod/partner_fee/prepaid/shipping_fee
+// (sum metrics) plus status/tag (term buckets). Type kept flexible — callers
+// access by string key.
+export type PancakeAggregationValue =
+  | { value: number }
+  | { buckets: Array<{ key: string; doc_count: number }> | null; doc_count?: number };
+
+export type PancakeAggregations = Record<string, PancakeAggregationValue>;
+
 // Standard paginated response from Pancake API
 export interface PancakeListResponse<T> {
   data: T[];
@@ -20,6 +30,7 @@ export interface PancakeListResponse<T> {
   page_size: number;
   total_entries: number;
   total_pages: number;
+  aggs?: PancakeAggregations;
 }
 
 // Standard single-item response from Pancake API
