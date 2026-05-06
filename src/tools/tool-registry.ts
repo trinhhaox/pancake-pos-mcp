@@ -38,7 +38,16 @@ export function registerAllTools(server: McpServer, client: PancakeHttpClient): 
 
   server.tool(
     "manage_orders",
-    `Manage orders in Pancake POS. Actions: list (filters/pagination/sort/projection), get (by ID), create, update (items replacement when status===0), delete (status===0), print, ship, call_later.
+    `Manage orders in Pancake POS. Actions: list (filters/pagination/sort/projection), get (by ID), create, update (items replacement when status===0), batch_update (1 call -> N order updates), delete (status===0), print, ship, call_later.
+
+BATCH_UPDATE — use when processing many orders at once (payment confirmations, status flips, bulk retag):
+  batch_update({ updates: [
+    { order_id: 411, note: "Đã ck" },
+    { order_id: 412, note: "Đã ck" },
+    { order_id: 413, status: 1 },
+  ]})
+Up to 50 per call. Each item needs order_id + ≥1 updatable field (note/status/tags/note_print). Returns per-item ok/error. Prefer this over N parallel update calls — counts as 1 tool action upstream.
+
 
 RESPONSE INCLUDES SERVER-SIDE AGGREGATIONS (no extra call):
 - aggs.cod.value          → total COD across filtered orders (VND)
@@ -56,8 +65,20 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
 - Top 10 by item count this month:
     list({ option_sort: "product_quantity_desc", page_size: 10, fields: ["id","product_quantity","total_price"], startDateTime, endDateTime })`,
     {
-      action: z.enum(["list", "get", "create", "update", "delete", "print", "ship", "call_later"]).describe("Action to perform"),
+      action: z.enum(["list", "get", "create", "update", "batch_update", "delete", "print", "ship", "call_later"]).describe("Action to perform"),
       order_id: z.coerce.number().int().optional().describe("Order ID (required for get/update/delete/print/ship)"),
+      updates: z
+        .array(
+          z.object({
+            order_id: z.coerce.number().int(),
+            note: z.string().optional(),
+            status: z.coerce.number().int().optional(),
+            tags: z.array(z.coerce.number().int()).optional(),
+            note_print: z.string().optional(),
+          }),
+        )
+        .optional()
+        .describe("Required for batch_update. Up to 50 per-order patches."),
       // list params
       search: z.string().optional().describe("Search by phone, name, note, or order code"),
       filter_status: z.array(z.coerce.number().int()).optional().describe("Filter by status codes"),

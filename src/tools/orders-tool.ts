@@ -161,6 +161,29 @@ const DeleteAction = z.object({
   order_id: z.coerce.number().int().describe("Order ID to delete (only status=0 orders)"),
 });
 
+// Single-update payload for batch_update. Excludes items[] (would require per-order
+// status===0 GET pre-check, defeating batch performance) and shipping_address
+// (rarely needed in bulk). Covers the high-volume use case: mark payment notes,
+// flip statuses, retag.
+const BatchUpdateItemSchema = z.object({
+  order_id: z.coerce.number().int(),
+  note: z.string().optional(),
+  status: z.coerce.number().int().optional(),
+  tags: z.array(z.coerce.number().int()).optional(),
+  note_print: z.string().optional(),
+});
+
+const BatchUpdateAction = z.object({
+  action: z.literal("batch_update"),
+  updates: z
+    .array(BatchUpdateItemSchema)
+    .min(1)
+    .max(50)
+    .describe(
+      "Per-order update payloads (max 50). Each item must have order_id plus at least one updatable field (note/status/tags/note_print). Use this instead of N separate update calls when processing payment confirmations or status flips for many orders.",
+    ),
+});
+
 const PrintAction = z.object({
   action: z.literal("print"),
   order_id: z.coerce.number().int().describe("Order ID to print"),
@@ -192,6 +215,7 @@ export const ordersToolSchema = z.discriminatedUnion("action", [
   GetAction,
   CreateAction,
   UpdateAction,
+  BatchUpdateAction,
   DeleteAction,
   PrintAction,
   ShipAction,
@@ -262,6 +286,38 @@ export async function handleOrdersTool(args: OrdersToolInput, client: PancakeHtt
       return warnings.length > 0
         ? { ...putResult.data, warnings }
         : putResult.data;
+    }
+    case "batch_update": {
+      const results = await Promise.allSettled(
+        args.updates.map(({ order_id, ...body }) => {
+          const hasField = Object.values(body).some((v) => v !== undefined);
+          if (!hasField) {
+            return Promise.reject(
+              new Error("each batch_update item needs at least one updatable field"),
+            );
+          }
+          return client
+            .put<Record<string, unknown>>(`orders/${order_id}`, body)
+            .then((r) => ({ order_id, ok: true as const, data: r.data }));
+        }),
+      );
+      const items = results.map((r, i) => {
+        if (r.status === "fulfilled") return r.value;
+        const update = args.updates[i];
+        return {
+          order_id: update?.order_id ?? -1,
+          ok: false as const,
+          error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+        };
+      });
+      const succeeded = items.filter((i) => i.ok).length;
+      return {
+        total: args.updates.length,
+        succeeded,
+        failed: args.updates.length - succeeded,
+        results: items,
+        note: "verify-after-update skipped in batch mode for performance — call get on suspect order_ids if fragile fields (shipping_fee, total_discount, surcharge) were sent",
+      };
     }
     case "delete": {
       await client.delete(`orders/${args.order_id}`);

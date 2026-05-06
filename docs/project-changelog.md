@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Bulk order updates: `batch_update` action (2026-05-06)
+
+**Motivation:** Production trace from a high-volume Zalo sales bot showed 446 `manage_orders` update calls in 6h with peak 117/h, all single-order patches (`{action:"update", note:"Đã ck", order_id:N}`) fan-out 8-10 in one millisecond. Burned upstream rate budget (goclaw enforces 150 tool calls/h per session) and added needless MCP round-trips while every payload had identical shape.
+
+**Change:** New `batch_update` action on `manage_orders` accepts `updates: [{order_id, note?, status?, tags?, note_print?}]` (max 50 per call) and dispatches PUT `orders/{id}` in parallel via `Promise.allSettled`. Returns per-item ok/error so partial failures don't abort the batch.
+
+- `src/tools/orders-tool.ts`: new `BatchUpdateAction` schema + `case "batch_update"` handler
+- `src/tools/tool-registry.ts`: action enum + `updates` param + tool description with usage example
+- `tests/tools/orders-tool-schema.test.ts`: 7 new cases (4 schema, 3 handler covering success / partial-failure / empty-update rejection)
+
+**Scope decisions (YAGNI):**
+- Excluded `items[]` (would require per-order `GET orders/{id}` status pre-check, defeating batch perf)
+- Excluded `shipping_address` (rarely batched in practice)
+- Excluded fragile financial fields (`shipping_fee`, `total_discount`, `surcharge`) — verify-after-update is skipped in batch mode; response carries a note pointing callers at `get` for audit
+- Token bucket already in `PancakeHttpClient` (1000/min, 10000/h) backstops the parallel fan-out at the Pancake API edge
+
+**Result:** 104/104 tests pass, typecheck clean. Same workload should drop ~117 update calls/h to ~3-5 batch calls/h.
+
+---
+
 ### Analytics gap fix: array serialization + sort enum + aggs preservation + analytics tool (2026-05-06)
 
 **Scope:** 4 phases addressing array query param serialization bug, sort options enum, server-side aggregation forwarding, and new analytics wrapper tool.

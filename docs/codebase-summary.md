@@ -227,7 +227,8 @@ Each tool file (~80-120 lines):
 - Error handling & pagination
 
 **Example:** `orders-tool.ts`
-- Actions: list, get, create, update, delete, print, ship, call_later
+- Actions: list, get, create, update, batch_update, delete, print, ship, call_later
+- `batch_update` (max 50/call): per-order patches (`note`/`status`/`tags`/`note_print`) via `Promise.allSettled`. Counts as 1 upstream tool action — replaces fan-out N updates from LLM
 - Uses: `client.getList()`, `client.post()`, `client.put()`, `client.delete()`
 
 ### Shared Utilities
