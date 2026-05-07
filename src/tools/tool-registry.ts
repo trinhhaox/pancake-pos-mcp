@@ -82,6 +82,16 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
       // list params
       search: z.string().optional().describe("Search by phone, name, note, or order code"),
       filter_status: z.array(z.coerce.number().int()).optional().describe("Filter by status codes"),
+      customer_id: z.string().optional().describe("Filter list by customer UUID (e.g. newest order of customer)"),
+      include_removed: z.literal(1).optional().describe("Set to 1 to include deleted orders in list"),
+      updateStatus: z
+        .string()
+        .optional()
+        .describe("Date-field filter: inserted_at, updated_at, paid_at, etc."),
+      order_sources: z
+        .array(z.array(z.string()))
+        .optional()
+        .describe("Filter by source: [[source_code, account_id]]"),
       page_number: z.coerce.number().int().optional().describe("Page number (default 1)"),
       page_size: z.coerce.number().int().optional().describe("Items per page (default 30)"),
       startDateTime: z.coerce.number().int().optional().describe("Start date unix timestamp"),
@@ -127,8 +137,15 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
       received_at_shop: z.boolean().optional().describe("Customer pickup at shop (create/update)."),
       custom_id: z.string().optional().describe("Custom order ID (create/update)."),
       bill_email: z.string().optional().describe("Buyer email (create/update)."),
-      // ship params
-      partner_id: z.coerce.number().int().optional().describe("Shipping partner ID (required for ship)"),
+      customer_pay_fee: z.boolean().optional().describe("Customer pays shipping fee (create/ship)."),
+      // ship params (partner_id accepts scalar for ship, or array of ints for list-filter)
+      partner_id: z
+        .union([z.coerce.number().int(), z.array(z.coerce.number().int())])
+        .optional()
+        .describe("Scalar number for ship (required); array of partner IDs to filter list"),
+      service_type_id: z.coerce.number().int().optional().describe("Ship: service type (e.g. 2=standard)"),
+      pick_shift: z.array(z.coerce.number().int()).optional().describe("Ship: pickup shift codes"),
+      required_note: z.string().optional().describe("Ship: delivery requirement note"),
       // call_later params
       order_ids: z.array(z.string()).optional().describe("Order IDs for call_later"),
       needs_call_at: z.string().optional().describe("ISO datetime for callback"),
@@ -157,16 +174,45 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
       product_id: z.string().optional().describe("Product UUID (required for get/update/delete/list_variations/create_variation)"),
       search: z.string().optional().describe("Search by name, custom_id, or barcode"),
       category_ids: z.array(z.coerce.number().int()).optional(),
+      tag_ids: z.array(z.coerce.number().int()).optional().describe("List filter: tag IDs"),
+      type: z
+        .enum(["product", "combo", "service"])
+        .optional()
+        .describe("List filter: product type"),
       page_number: z.coerce.number().int().optional(),
       page_size: z.coerce.number().int().optional(),
       name: z.string().optional().describe("Product name (required for create)"),
       custom_id: z.string().optional().describe("Custom product ID / SKU"),
+      brand_id: z.coerce.number().int().optional().describe("Brand ID (create/update)"),
       description: z.string().optional(),
       retail_price: z.coerce.number().optional(),
+      wholesale_price: z.coerce.number().optional().describe("Wholesale price (create / create_variation)"),
+      last_imported_price: z.coerce.number().optional().describe("Cost price (create)"),
       images: z.array(z.string()).optional(),
       keyword: z.string().optional().describe("Variation name (required for create_variation)"),
       barcode: z.string().optional(),
       weight: z.coerce.number().optional(),
+      variations: z
+        .array(
+          z.object({
+            keyword: z.string(),
+            custom_id: z.string().optional(),
+            retail_price: z.coerce.number().optional(),
+            wholesale_price: z.coerce.number().optional(),
+            weight: z.coerce.number().optional(),
+            barcode: z.string().optional(),
+            fields: z
+              .array(z.object({ name: z.string(), value: z.string() }))
+              .optional()
+              .describe("Variation attributes like Color, Size"),
+          }),
+        )
+        .optional()
+        .describe("create: nested variations to create alongside the product"),
+      fields: z
+        .array(z.object({ name: z.string(), value: z.string() }))
+        .optional()
+        .describe("create_variation: variation attribute fields (name/value pairs)"),
     },
     async (args) => {
       try {
@@ -184,7 +230,7 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
     "Manage customers in Pancake POS. Actions: list (search), get (by UUID), create, update, delete, reward_history, add_note.",
     {
       action: z.enum(["list", "get", "create", "update", "delete", "reward_history", "add_note"]).describe("Action to perform"),
-      customer_id: z.string().optional().describe("Customer UUID (required for get/update/delete/reward_history)"),
+      customer_id: z.string().optional().describe("Customer UUID (required for get/update/delete/reward_history; optional for add_note when using conversation_id)"),
       search: z.string().optional().describe("Search by name, phone, or email"),
       page_number: z.coerce.number().int().optional(),
       page_size: z.coerce.number().int().optional(),
@@ -195,8 +241,30 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
       date_of_birth: z.string().optional(),
       reward_point: z.coerce.number().optional(),
       tags: z.array(z.string()).optional(),
+      is_block: z.boolean().optional().describe("Block this customer (create/update)"),
+      level_id: z.string().optional().describe("Customer level UUID (create/update)"),
+      shop_customer_addresses: z
+        .array(
+          z.object({
+            country_code: z.coerce.number().optional(),
+            province_id: z.string(),
+            district_id: z.string(),
+            commune_id: z.string().optional(),
+            address: z.string(),
+            full_name: z.string(),
+            phone_number: z.string(),
+          }),
+        )
+        .optional()
+        .describe("create: customer addresses"),
       message: z.string().optional().describe("Note message (required for add_note)"),
       order_id: z.coerce.number().int().optional().describe("Related order ID for add_note"),
+      conversation_id: z.string().optional().describe("add_note: conversation ID (alternate to customer_id)"),
+      page_id: z.string().optional().describe("add_note: page ID (alternate to customer_id)"),
+      images: z
+        .array(z.object({ url: z.string(), name: z.string().optional() }))
+        .optional()
+        .describe("add_note: image attachments"),
     },
     async (args) => {
       try {
