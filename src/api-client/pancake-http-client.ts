@@ -52,16 +52,6 @@ export class PancakeHttpClient {
     this.enableRateLimiter = options?.enableRateLimiter ?? true;
   }
 
-  async getRaw<T>(path: string, params?: Record<string, unknown>): Promise<T> {
-    const url = buildRequestUrl(this.baseUrl, this.shopId, this.apiKey, path, params);
-    const response = await this.executeWithRetry(url, { method: "GET" });
-    if (!response.ok) {
-      throw new PancakeApiError("API_ERROR", `HTTP ${response.status}`, response.status);
-    }
-    const json = await response.json() as T;
-    return json;
-  }
-
   async get<T>(path: string, params?: Record<string, unknown>): Promise<PancakeResponse<T>> {
     const url = buildRequestUrl(this.baseUrl, this.shopId, this.apiKey, path, params);
     const response = await this.executeWithRetry(url, { method: "GET" });
