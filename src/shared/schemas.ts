@@ -58,12 +58,29 @@ export const VietnamAddressSchema = z.object({
   address: z.string().optional().describe("Street address (house number, street name)"),
   country_code: z.coerce.number().optional().describe("Country code, default 84 for Vietnam"),
   // OLD format (pre-2025-07-01, 3-tier: province → district → commune)
-  province_id: z.string().optional().describe("OLD format province ID (e.g. '701')"),
-  district_id: z.string().optional().describe("OLD format district ID (3-tier only)"),
-  commune_id: z.string().optional().describe("OLD format commune/ward ID (3-tier only)"),
+  province_id: z.string().optional().describe(
+    "OLD format province ID. MUST be obtained from lookup_address(action='provinces') field 'id'. " +
+    "Numeric string. Do NOT hardcode or guess — wrong IDs cause shipping partner rejection. " +
+    "When provided on create, district_id + commune_id are also required.",
+  ),
+  district_id: z.string().optional().describe(
+    "OLD format district ID. MUST be obtained from lookup_address(action='districts', province_id=...) field 'id'. " +
+    "Numeric string. NEW format (post-2025-07-01) does not use this — leave unset.",
+  ),
+  commune_id: z.string().optional().describe(
+    "OLD format commune/ward ID. MUST be obtained from lookup_address(action='communes', province_id=..., district_id=...) field 'id'. " +
+    "Numeric string. Required alongside province_id+district_id on create.",
+  ),
   // NEW format (post-2025-07-01, 2-tier: province → commune; district level removed)
-  new_province_id: z.string().optional().describe("NEW format province ID (e.g. '84_VN129')"),
-  new_commune_id: z.string().optional().describe("NEW format commune/ward ID (no district level)"),
+  new_province_id: z.string().optional().describe(
+    "NEW format province ID. MUST be obtained from lookup_address(action='provinces') field 'new_id'. " +
+    "Format: '84_VN<digits>'. Do NOT hardcode or guess. " +
+    "When provided on create, new_commune_id is also required.",
+  ),
+  new_commune_id: z.string().optional().describe(
+    "NEW format commune/ward ID. MUST be obtained from lookup_address(action='communes', province_id=...) field 'new_id'. " +
+    "Format: '84_VN<digits>'. No district level in NEW schema.",
+  ),
   new_full_address: z.string().optional().describe("NEW format pre-formatted full address"),
 });
 

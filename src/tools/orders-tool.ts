@@ -61,12 +61,38 @@ const OrderItemSchema = z.object({
   note: z.string().optional(),
 });
 
-// Enforce at least one province anchor (OLD or NEW) when caller intends to set
-// location. Pure contact updates (phone_number/full_name only) bypass.
+// Enforce a complete location set (OLD: province+district+commune, NEW: province+commune)
+// when caller intends to set location. Pure contact updates (phone_number/full_name only)
+// bypass. Bare province_id without commune is rejected — shipping partners reject orders
+// missing commune-level resolution, so we fail fast at MCP layer rather than create
+// a broken order on Pancake.
 function assertAddressHasLocation(addr: VietnamAddress, mode: "create" | "update"): void {
-  const hasOld = !!addr.province_id;
-  const hasNew = !!addr.new_province_id;
+  const hasOldFull = !!(addr.province_id && addr.district_id && addr.commune_id);
+  const hasNewFull = !!(addr.new_province_id && addr.new_commune_id);
+  const hasOld = hasOldFull;
+  const hasNew = hasNewFull;
   const sentAnyLocation = LOCATION_FIELDS.some((k) => addr[k] !== undefined);
+
+  // Reject partial OLD/NEW sets early with a precise message — guides the LLM to
+  // call lookup_address rather than guess missing IDs.
+  if (mode === "create") {
+    if (addr.province_id && !hasOldFull) {
+      throw new Error(
+        `Create order: shipping_address has province_id="${addr.province_id}" ` +
+          `but is missing district_id and/or commune_id. OLD format requires all three. ` +
+          `Resolve via lookup_address(action="districts", province_id=...) then ` +
+          `lookup_address(action="communes", province_id=..., district_id=...). ` +
+          `Do NOT guess IDs.`,
+      );
+    }
+    if (addr.new_province_id && !hasNewFull) {
+      throw new Error(
+        `Create order: shipping_address has new_province_id="${addr.new_province_id}" ` +
+          `but is missing new_commune_id. NEW format requires both. ` +
+          `Resolve via lookup_address(action="communes", province_id=<NEW id>).`,
+      );
+    }
+  }
 
   if (mode === "create") {
     if (!hasOld && !hasNew) {

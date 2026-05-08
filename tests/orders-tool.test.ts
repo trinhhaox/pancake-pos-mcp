@@ -102,6 +102,56 @@ describe("handleOrdersTool — create address validation", () => {
     expect(client.post).not.toHaveBeenCalled();
   });
 
+  // Regression: trace 019e0747 / 019e0219 — agent skipped lookup_address and sent
+  // bare province_id="701" (a value scraped from the schema example string) for 5
+  // orders across 5 different provinces. Server must reject partial OLD/NEW sets.
+  it("Create with bare province_id (no district/commune) throws and points to lookup_address", async () => {
+    const client = mockClient();
+    const args: OrdersToolInput = {
+      ...baseCreate,
+      shipping_address: {
+        full_name: "A",
+        phone_number: "0900000000",
+        address: "x",
+        province_id: "701",
+      },
+    };
+    await expect(handleOrdersTool(args, client)).rejects.toThrow(/lookup_address/);
+    await expect(handleOrdersTool(args, client)).rejects.toThrow(/missing district_id/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  it("Create with province_id + district_id but no commune_id throws", async () => {
+    const client = mockClient();
+    const args: OrdersToolInput = {
+      ...baseCreate,
+      shipping_address: {
+        full_name: "A",
+        phone_number: "0900000000",
+        address: "x",
+        province_id: "701",
+        district_id: "70101",
+      },
+    };
+    await expect(handleOrdersTool(args, client)).rejects.toThrow(/commune_id/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
+  it("Create with bare new_province_id (no new_commune_id) throws", async () => {
+    const client = mockClient();
+    const args: OrdersToolInput = {
+      ...baseCreate,
+      shipping_address: {
+        full_name: "A",
+        phone_number: "0900000000",
+        address: "x",
+        new_province_id: "84_VN129",
+      },
+    };
+    await expect(handleOrdersTool(args, client)).rejects.toThrow(/new_commune_id/);
+    expect(client.post).not.toHaveBeenCalled();
+  });
+
   it("Create OLD format calls client.post with body", async () => {
     const client = mockClient();
     const args: OrdersToolInput = {
