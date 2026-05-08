@@ -2,6 +2,18 @@ import { z } from "zod";
 import type { PancakeHttpClient } from "../api-client/pancake-http-client.js";
 import { formatPaginatedResult } from "../shared/pagination-helpers.js";
 import { PaginationParams } from "../shared/schemas.js";
+import { project } from "../shared/response-projection.js";
+import {
+  PRODUCT_COMPACT_MASK,
+  PRODUCT_VARIATIONS_MASK,
+} from "../shared/compact-masks.js";
+
+const VerbositySchema = z
+  .enum(["compact", "full"])
+  .optional()
+  .describe(
+    "Response detail level. 'compact' (default) strips images/SEO/audit fields (~70% smaller). 'full' returns raw Pancake response.",
+  );
 
 const ListAction = z.object({
   action: z.literal("list"),
@@ -9,12 +21,14 @@ const ListAction = z.object({
   category_ids: z.array(z.coerce.number().int()).optional().describe("Filter by category IDs"),
   tag_ids: z.array(z.coerce.number().int()).optional().describe("Filter by tag IDs"),
   type: z.enum(["product", "combo", "service"]).optional().describe("Product type filter"),
+  verbosity: VerbositySchema,
   ...PaginationParams.shape,
 });
 
 const GetAction = z.object({
   action: z.literal("get"),
   product_id: z.string().describe("Product UUID"),
+  verbosity: VerbositySchema,
 });
 
 const CreateAction = z.object({
@@ -63,6 +77,7 @@ const DeleteAction = z.object({
 const ListVariationsAction = z.object({
   action: z.literal("list_variations"),
   product_id: z.string().describe("Product UUID"),
+  verbosity: VerbositySchema,
 });
 
 const CreateVariationAction = z.object({
@@ -95,13 +110,19 @@ export type ProductsToolInput = z.infer<typeof productsToolSchema>;
 export async function handleProductsTool(args: ProductsToolInput, client: PancakeHttpClient) {
   switch (args.action) {
     case "list": {
-      const { action, ...params } = args;
+      const { action, verbosity, ...params } = args;
       const result = await client.getList("products", params);
-      return formatPaginatedResult(result);
+      const formatted = formatPaginatedResult(result);
+      if (Array.isArray(formatted.data)) {
+        formatted.data = formatted.data.map((p) =>
+          project(p, PRODUCT_COMPACT_MASK, verbosity),
+        );
+      }
+      return formatted;
     }
     case "get": {
       const result = await client.get(`products/${args.product_id}`);
-      return result.data;
+      return project(result.data, PRODUCT_COMPACT_MASK, args.verbosity);
     }
     case "create": {
       const { action, ...body } = args;
@@ -122,7 +143,10 @@ export async function handleProductsTool(args: ProductsToolInput, client: Pancak
       // (verified 2026-05-06: returns 404). Variations live embedded in the
       // product GET response, so we fetch the product and project the array.
       const result = await client.get<{ variations?: unknown[] }>(`products/${args.product_id}`);
-      return { data: result.data.variations ?? [] };
+      const variations = result.data.variations ?? [];
+      return {
+        data: variations.map((v) => project(v, PRODUCT_VARIATIONS_MASK, args.verbosity)),
+      };
     }
     case "create_variation": {
       const { action, product_id, ...body } = args;

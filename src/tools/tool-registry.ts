@@ -154,6 +154,13 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
       need_notify_users: z.array(z.string()).optional(),
       // print params
       template: z.string().optional().describe("Print template: default, a5, label"),
+      // response projection
+      verbosity: z
+        .enum(["compact", "full"])
+        .optional()
+        .describe(
+          "Response detail level for list/get/create/update. 'compact' (default) returns essential fields only (~85% smaller). 'full' returns raw Pancake response.",
+        ),
     },
     async (args) => {
       try {
@@ -213,6 +220,12 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
         .array(z.object({ name: z.string(), value: z.string() }))
         .optional()
         .describe("create_variation: variation attribute fields (name/value pairs)"),
+      verbosity: z
+        .enum(["compact", "full"])
+        .optional()
+        .describe(
+          "Response detail level for list/get/list_variations. 'compact' (default) strips images/SEO/audit fields (~70% smaller). 'full' returns raw Pancake response.",
+        ),
     },
     async (args) => {
       try {

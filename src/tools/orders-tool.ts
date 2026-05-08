@@ -8,6 +8,15 @@ import {
   type VietnamAddress,
 } from "../shared/schemas.js";
 import { ORDER_SORT_VALUES, ORDER_SORT_DESCRIPTION } from "../shared/sort-options.js";
+import { project } from "../shared/response-projection.js";
+import { ORDER_COMPACT_MASK } from "../shared/compact-masks.js";
+
+const VerbositySchema = z
+  .enum(["compact", "full"])
+  .optional()
+  .describe(
+    "Response detail level. 'compact' (default) returns essential fields only (~85% smaller). 'full' returns raw Pancake API response.",
+  );
 
 const CreateShippingAddressSchema = VietnamAddressSchema.extend({
   full_name: z.string(),
@@ -91,6 +100,7 @@ const ListAction = z.object({
   partner_id: z.array(z.coerce.number().int()).optional().describe("Filter by shipping partner IDs"),
   customer_id: z.string().optional().describe("Filter by customer UUID"),
   order_sources: z.array(z.array(z.string())).optional().describe("Filter by source [[source_code, account_id]]"),
+  verbosity: VerbositySchema,
   ...PaginationParams.shape,
   ...DateRangeParams.shape,
 });
@@ -98,6 +108,7 @@ const ListAction = z.object({
 const GetAction = z.object({
   action: z.literal("get"),
   order_id: z.coerce.number().int().describe("Order ID"),
+  verbosity: VerbositySchema,
 });
 
 const CreateAction = z.object({
@@ -120,6 +131,7 @@ const CreateAction = z.object({
   custom_id: z.string().optional().describe("Custom order ID"),
   customer_pay_fee: z.boolean().optional(),
   tags: z.array(z.coerce.number().int()).optional(),
+  verbosity: VerbositySchema,
 });
 
 const UpdateAction = z.object({
@@ -154,6 +166,7 @@ const UpdateAction = z.object({
   ),
   // NOTE: customer_pay_fee intentionally excluded — Pancake api_key auth
   // silently drops this field (verified 2026-04-28 on shop 123456789).
+  verbosity: VerbositySchema,
 });
 
 const DeleteAction = z.object({
@@ -227,22 +240,26 @@ export type OrdersToolInput = z.infer<typeof ordersToolSchema>;
 export async function handleOrdersTool(args: OrdersToolInput, client: PancakeHttpClient) {
   switch (args.action) {
     case "list": {
-      const { action, ...params } = args;
+      const { action, verbosity, ...params } = args;
       const result = await client.getList("orders", params);
-      return formatPaginatedResult(result);
+      const formatted = formatPaginatedResult(result);
+      if (Array.isArray(formatted.data)) {
+        formatted.data = formatted.data.map((o) => project(o, ORDER_COMPACT_MASK, verbosity));
+      }
+      return formatted;
     }
     case "get": {
       const result = await client.get(`orders/${args.order_id}`);
-      return result.data;
+      return project(result.data, ORDER_COMPACT_MASK, args.verbosity);
     }
     case "create": {
-      const { action, ...body } = args;
+      const { action, verbosity, ...body } = args;
       assertAddressHasLocation(body.shipping_address, "create");
       const result = await client.post("orders", body);
-      return result.data;
+      return project(result.data, ORDER_COMPACT_MASK, verbosity);
     }
     case "update": {
-      const { action, order_id, ...body } = args;
+      const { action, order_id, verbosity, ...body } = args;
       if (body.shipping_address) {
         assertAddressHasLocation(body.shipping_address, "update");
       }
@@ -258,13 +275,15 @@ export async function handleOrdersTool(args: OrdersToolInput, client: PancakeHtt
       }
       const putResult = await client.put<Record<string, unknown>>(`orders/${order_id}`, body);
 
+      // sentFragile detect from INPUT body (not response) — projection-safe
       const sentFragile = FRAGILE_FIELDS.filter(
         (k) => (body as Record<string, unknown>)[k] !== undefined,
       );
       if (sentFragile.length === 0) {
-        return putResult.data;
+        return project(putResult.data, ORDER_COMPACT_MASK, verbosity);
       }
 
+      // verify-after-update GET stays RAW — must compare sent vs got before projection
       const warnings: string[] = [];
       try {
         const verify = await client.get<Record<string, unknown>>(`orders/${order_id}`);
@@ -283,9 +302,11 @@ export async function handleOrdersTool(args: OrdersToolInput, client: PancakeHtt
         warnings.push(`verify-after-update GET failed: ${msg}`);
       }
 
+      // Project ONLY at final return; warnings already detected against raw verify.data
+      const projected = project(putResult.data, ORDER_COMPACT_MASK, verbosity);
       return warnings.length > 0
-        ? { ...putResult.data, warnings }
-        : putResult.data;
+        ? { ...(projected as Record<string, unknown>), warnings }
+        : projected;
     }
     case "batch_update": {
       const results = await Promise.allSettled(

@@ -435,3 +435,94 @@ describe("handleOrdersTool — update address validation", () => {
     );
   });
 });
+
+describe("orders compact projection (Phase 2)", () => {
+  // Pancake CREATE/GET/UPDATE return identical record shape — reuse GET fixture.
+  const fullOrderResp = require("./fixtures/orders-get-full-response.json");
+  const fullOrder = fullOrderResp.data as Record<string, unknown>;
+
+  async function loadCompactMask() {
+    const m = await import("../src/shared/compact-masks.js");
+    const p = await import("../src/shared/response-projection.js");
+    return { ORDER_COMPACT_MASK: m.ORDER_COMPACT_MASK, project: p.project };
+  }
+
+  it("compact response contains required keys for agent reply", async () => {
+    const { ORDER_COMPACT_MASK, project } = await loadCompactMask();
+    const compact = project(fullOrder, ORDER_COMPACT_MASK, "compact") as Record<string, unknown>;
+    for (const k of ["id", "system_id", "status", "total_price", "items", "shipping_address"]) {
+      expect(compact).toHaveProperty(k);
+    }
+  });
+
+  it("compact strips noise fields", async () => {
+    const { ORDER_COMPACT_MASK, project } = await loadCompactMask();
+    const compact = project(fullOrder, ORDER_COMPACT_MASK, "compact") as Record<string, unknown>;
+    for (const k of ["p_utm_source", "assigning_care", "last_editor", "botcake_info", "marketer"]) {
+      expect(compact).not.toHaveProperty(k);
+    }
+  });
+
+  it("compact items[] keep only essential fields (<15 keys/item vs 50+ raw)", async () => {
+    const { ORDER_COMPACT_MASK, project } = await loadCompactMask();
+    const compact = project(fullOrder, ORDER_COMPACT_MASK, "compact") as { items: Record<string, unknown>[] };
+    expect(Array.isArray(compact.items)).toBe(true);
+    for (const it of compact.items) {
+      expect(Object.keys(it).length).toBeLessThan(15);
+    }
+  });
+
+  it("verbosity=full returns raw response", async () => {
+    const { ORDER_COMPACT_MASK, project } = await loadCompactMask();
+    const full = project(fullOrder, ORDER_COMPACT_MASK, "full");
+    expect(full).toEqual(fullOrder);
+  });
+
+  it("compact size <= 25% of full", async () => {
+    const { ORDER_COMPACT_MASK, project } = await loadCompactMask();
+    const fullBytes = JSON.stringify(fullOrder).length;
+    const compactBytes = JSON.stringify(project(fullOrder, ORDER_COMPACT_MASK, "compact")).length;
+    expect(compactBytes / fullBytes).toBeLessThan(0.25);
+  });
+
+  it("get action returns projected response by default", async () => {
+    const client = mockClient({
+      get: vi.fn().mockResolvedValue({ data: fullOrder, success: true }),
+    });
+    const parsed = ordersToolSchema.parse({ action: "get", order_id: 480 });
+    const result = (await handleOrdersTool(parsed, client)) as Record<string, unknown>;
+    expect(result).toHaveProperty("id");
+    expect(result).not.toHaveProperty("p_utm_source");
+    expect(result).not.toHaveProperty("assigning_care");
+  });
+
+  it("get action with verbosity=full returns raw response", async () => {
+    const client = mockClient({
+      get: vi.fn().mockResolvedValue({ data: fullOrder, success: true }),
+    });
+    const parsed = ordersToolSchema.parse({ action: "get", order_id: 480, verbosity: "full" });
+    const result = await handleOrdersTool(parsed, client);
+    expect(result).toEqual(fullOrder);
+  });
+
+  it("update fragile-field warnings still detected with compact projection", async () => {
+    // verify GET must remain raw so silent-drop comparison works.
+    const client = mockClient({
+      put: vi.fn().mockResolvedValue({ data: fullOrder, success: true }),
+      get: vi.fn().mockResolvedValue({
+        data: { ...fullOrder, total_discount: 0 },
+        success: true,
+      }),
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "update",
+      order_id: 480,
+      total_discount: 50000,
+    });
+    const result = (await handleOrdersTool(parsed, client)) as Record<string, unknown>;
+    expect(result.warnings).toBeDefined();
+    expect((result.warnings as string[])[0]).toMatch(/total_discount/);
+    // compact projection still applied to put response
+    expect(result).not.toHaveProperty("p_utm_source");
+  });
+});
