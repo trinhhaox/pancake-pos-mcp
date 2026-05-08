@@ -23,8 +23,17 @@ if [ -f .env ]; then
 fi
 
 for f in $files; do
-  staged=$(git show ":$f" 2>/dev/null || true)
-  [ -z "$staged" ] && continue
+  staged_raw=$(git show ":$f" 2>/dev/null || true)
+  [ -z "$staged_raw" ] && continue
+
+  # Normalize Unicode to NFC so diacritic checks aren't bypassed by NFD
+  # (decomposed) input. Mac filesystems sometimes emit NFD; some editors
+  # paste NFD. Fall back to raw text if no normalizer available.
+  if command -v python3 >/dev/null 2>&1; then
+    staged=$(printf '%s' "$staged_raw" | python3 -c "import sys,unicodedata;sys.stdout.write(unicodedata.normalize('NFC',sys.stdin.read()))" 2>/dev/null || printf '%s' "$staged_raw")
+  else
+    staged="$staged_raw"
+  fi
 
   echo "Scanning $f"
 

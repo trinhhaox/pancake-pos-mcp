@@ -10,7 +10,12 @@
  *      (already used by the production worker — same credentials).
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { loadConfig } from "../../src/config.js";
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(SCRIPT_DIR, "..", "..");
 import { PancakeHttpClient } from "../../src/api-client/pancake-http-client.js";
 import { handleOrdersTool } from "../../src/tools/orders-tool.js";
 import { handleProductsTool } from "../../src/tools/products-tool.js";
@@ -52,15 +57,20 @@ const TOOL_HANDLERS = {
 type ToolKey = keyof typeof TOOL_HANDLERS;
 
 function loadEnvFromDotEnv(): Record<string, string> {
+  const envPath = join(REPO_ROOT, ".env");
   try {
-    const txt = readFileSync(".env", "utf8");
+    const txt = readFileSync(envPath, "utf8");
     const env: Record<string, string> = {};
     for (const line of txt.split("\n")) {
       const m = line.match(/^([A-Z_]+)=(.*)$/);
       if (m && m[1] && m[2] !== undefined) env[m[1]] = m[2].replace(/^["']|["']$/g, "");
     }
     return env;
-  } catch {
+  } catch (err) {
+    console.warn(
+      `[replay] could not read ${envPath}: ${err instanceof Error ? err.message : err}\n` +
+        `[replay] relying on process.env for credentials`,
+    );
     return {};
   }
 }
@@ -83,7 +93,7 @@ async function main() {
   const client = new PancakeHttpClient(config, { enableRateLimiter: true });
 
   const traces = JSON.parse(
-    readFileSync("tests/replay/traces.json", "utf8"),
+    readFileSync(join(SCRIPT_DIR, "traces.json"), "utf8"),
   ) as TraceEntry[];
 
   console.log(`Replaying ${traces.length} read-only tool calls\n`);
@@ -211,7 +221,7 @@ async function main() {
   }
 
   const report = lines.join("\n") + "\n";
-  writeFileSync("tests/replay/report.md", report);
+  writeFileSync(join(SCRIPT_DIR, "report.md"), report);
   console.log(`\n--- Report written to tests/replay/report.md ---\n`);
   console.log(report);
 }
