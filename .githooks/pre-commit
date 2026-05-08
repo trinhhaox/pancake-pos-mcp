@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# Pre-commit PII guard for tests/fixtures/*.json
+# Tracked in repo; activated via `git config core.hooksPath .githooks`.
+#
+# Blocks commit when staged fixtures contain:
+#   1. Pancake api_key (hex or UUID form) read from .env
+#   2. Real-looking Vietnamese mobile phone numbers (excluding placeholders)
+#   3. Vietnamese-diacritic text in name/address fields (likely real PII)
+#
+# Override (DISCOURAGED): git commit --no-verify
+
+set -e
+
+files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^tests/fixtures/.*\.json$' || true)
+[ -z "$files" ] && exit 0
+
+errors=0
+report() { echo "  ❌ $1"; errors=$((errors + 1)); }
+
+api_key=""
+if [ -f .env ]; then
+  api_key=$(grep -E '^PANCAKE_POS_API_KEY=' .env | cut -d= -f2 | tr -d '[:space:]"' || true)
+fi
+
+for f in $files; do
+  staged=$(git show ":$f" 2>/dev/null || true)
+  [ -z "$staged" ] && continue
+
+  echo "Scanning $f"
+
+  # 1. API key — hex form
+  if [ -n "$api_key" ] && printf '%s' "$staged" | grep -q "$api_key"; then
+    report "$f: api_key (hex form) leaked"
+  fi
+
+  # 2. API key — UUID form (standard 8-4-4-4-12 split)
+  if [ -n "$api_key" ] && [ ${#api_key} -eq 32 ]; then
+    api_key_uuid=$(printf '%s' "$api_key" | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.+)/\1-\2-\3-\4-\5/')
+    if printf '%s' "$staged" | grep -q "$api_key_uuid"; then
+      report "$f: api_key (UUID form: $api_key_uuid) leaked"
+    fi
+  fi
+
+  # 3. Real VN mobile phones in phone fields (exclude placeholders 09000000xx)
+  bad_phones=$(printf '%s' "$staged" \
+    | grep -oE '"(phone_number|phone)"[[:space:]]*:[[:space:]]*"0[0-9]{9}"' \
+    | grep -vE '"090000000[0-9]"' \
+    | grep -vE '"099999999[0-9]"' || true)
+  if [ -n "$bad_phones" ]; then
+    report "$f: real VN phone number(s):"
+    printf '%s\n' "$bad_phones" | head -3 | sed 's/^/      /'
+  fi
+
+  # Phone arrays (phone_numbers: [...])
+  bad_phone_arr=$(printf '%s' "$staged" \
+    | grep -oE '"phone_numbers"[[:space:]]*:[[:space:]]*\["0[0-9]{9}"' \
+    | grep -vE '"090000000[0-9]"' || true)
+  if [ -n "$bad_phone_arr" ]; then
+    report "$f: real VN phone in phone_numbers array"
+  fi
+
+  # 4. Vietnamese diacritics in name/address fields
+  diacritic_class='àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ'
+  bad_diacritic=$(printf '%s' "$staged" \
+    | grep -oE "\"(bill_full_name|full_name|name|address|full_address|new_full_address|note|province_name|district_name|commune_name)\"[[:space:]]*:[[:space:]]*\"[^\"]*[$diacritic_class][^\"]*\"" \
+    || true)
+  if [ -n "$bad_diacritic" ]; then
+    report "$f: Vietnamese-diacritic text in name/address field"
+    printf '%s\n' "$bad_diacritic" | head -3 | sed 's/^/      /'
+  fi
+done
+
+echo
+if [ $errors -gt 0 ]; then
+  echo "🛑 Pre-commit blocked: $errors PII issue(s) in tests/fixtures/."
+  echo "   Sanitize fixtures (use synthetic placeholders) before committing."
+  echo "   Override (DISCOURAGED): git commit --no-verify"
+  exit 1
+fi
+
+echo "✓ Fixture PII scan clean"
+exit 0
