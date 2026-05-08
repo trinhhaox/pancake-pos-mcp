@@ -652,128 +652,70 @@ wrangler deploy
 
 ## 11. Cloudflare Workers Deployment Architecture
 
-### Request Handling (Per-Request Lifecycle)
+Extracted on 2026-05-08 to keep this file under the 800-LOC budget. See **[`workers-architecture.md`](./workers-architecture.md)** for the per-request lifecycle, `HttpClientOptions` tuning, CORS/auth design, endpoints, and Bun-vs-Workers tradeoffs.
 
-Unlike Bun/HTTP server (persistent server), Cloudflare Workers creates a fresh MCP server + transport **per incoming request**:
-
-```
-Client Request
-  ↓
-  Cloudflare Workers fetch handler (src/worker.ts)
-  ├─ Load config from env variables (cached across requests)
-  ├─ Get or create HTTP client (cached, reused across requests)
-  ├─ Auth verification (timing-safe token comparison)
-  ├─ Create fresh MCP server instance
-  ├─ Create fresh transport instance
-  ├─ Handle request
-  ├─ Add CORS headers
-  └─ Return response
-  ↓
-Client Response
-```
-
-**Key Design:**
-- **Config + Client:** Cached at module level (reused across requests)
-- **Server + Transport:** Fresh per request (required by MCP SDK stateless behavior)
-- **Timeout:** 8 seconds (vs 30s in Bun mode, constrained by Workers)
-- **Rate Limiter:** Disabled (per-request mode incompatible with stateful token bucket)
-- **Retries:** Reduced to 2 attempts (vs 3 in Bun mode, to fit within timeout)
-
-### Configuration (wrangler.toml)
-
-```toml
-name = "pancake-pos-mcp"
-main = "src/worker.ts"
-compatibility_date = "2026-04-01"
-compatibility_flags = ["nodejs_compat"]
-
-[vars]
-PANCAKE_POS_API_KEY = "placeholder-set-via-wrangler-secret"
-PANCAKE_POS_SHOP_ID = "placeholder-set-via-wrangler-secret"
-PANCAKE_POS_BASE_URL = "https://pos.pages.fm/api/v1"
-```
-
-Secrets are managed separately:
-```bash
-wrangler secret put PANCAKE_POS_API_KEY
-wrangler secret put PANCAKE_POS_SHOP_ID
-wrangler secret put MCP_AUTH_TOKEN  # optional, for Bearer token auth
-```
-
-### HTTP Client Tuning (Workers Mode)
-
-The `HttpClientOptions` interface allows mode-specific tuning:
-
-```typescript
-interface HttpClientOptions {
-  /** Fetch timeout in milliseconds (default: 30s, Workers: 8s) */
-  fetchTimeoutMs?: number;
-  
-  /** Max retry attempts (default: 3, Workers: 2) */
-  maxRetries?: number;
-  
-  /** Enable token-bucket rate limiter (default: true, Workers: false) */
-  enableRateLimiter?: boolean;
-}
-```
-
-**Workers Initialization:**
-```typescript
-new PancakeHttpClient(config, {
-  fetchTimeoutMs: 8_000,      // Cloudflare timeout
-  maxRetries: 2,              // Reduced for stateless mode
-  enableRateLimiter: false,   // Disabled (no state across requests)
-})
-```
-
-### CORS & Auth
-
-Workers fetch handler includes built-in:
-- **CORS Support:** Preflight (OPTIONS) + headers on all responses
-- **Timing-Safe Auth:** Bearer token verification using `crypto.subtle.timingSafeEqual`
-- **Health Endpoint:** `/health` (no auth required)
-
-```typescript
-// Auth required if MCP_AUTH_TOKEN is set in env
-const authToken = config.MCP_AUTH_TOKEN;
-if (authToken) {
-  const token = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : "";
-  if (!token || !(await verifyToken(token, authToken))) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-    });
-  }
-}
-```
-
-### Endpoints
-
-| Path | Auth | Purpose |
-|------|------|---------|
-| `GET /health` | No | Health check |
-| `POST /mcp` | Yes* | MCP protocol endpoint |
-| `OPTIONS /*` | No | CORS preflight |
-
-*Auth required only if `MCP_AUTH_TOKEN` is set.
-
-### Advantages Over Bun/HTTP
-- **Automatic Scaling:** Global edge network, no infrastructure management
-- **Lower Latency:** CDN-adjacent deployment worldwide
-- **Cost-Efficient:** Pay-per-request, no idle cost
-- **Easy Deployment:** `wrangler deploy` (single command)
-
-### Tradeoffs
-- **Shorter Timeout:** 8s vs 30s (Pancake API must respond quickly)
-- **No Rate Limiter:** Handled per-request, not across lifetime
-- **Reduced Retries:** 2 attempts vs 3 to fit timeout
-- **No Session State:** Fresh server per request (minor overhead, but stateless by design)
 
 ---
 
-## 12. Key Architectural Principles
+## 12. Response Projection Layer
+
+### Overview
+New json-mask-based projection system reduces response sizes by 50–85% for bandwidth-constrained scenarios (e.g., Cloudflare Workers, mobile clients).
+
+### Architecture
+```
+Tool Handler (raw API response)
+  ↓
+project(data, "compact")  // Apply compact-masks.ts mask
+  ↓
+Lightweight JSON (id, status, key fields only)
+  ↓
+MCP Response
+```
+
+### Masks
+Central registry in `src/shared/compact-masks.ts`:
+- **orders:** id, status, bill_full_name, items[id, name, qty, price], total_price
+- **products:** id, name, sku, category_id, images[url]
+- **warehouses:** id, name, address
+- **address:** province_id, new_province_id, new_commune_id (for lookups)
+
+### Verbosity Parameter
+Tools can accept `verbosity` parameter to override defaults:
+```typescript
+// Compact (50 bytes)
+GET /manage_orders?action=list&verbosity=compact
+
+// Full (100+ bytes)
+GET /manage_orders?action=list&verbosity=full&fields[]=items[customized_fields]
+```
+
+**Backward Compatibility:** Existing callers get compact by default; can opt-in to full with parameter.
+
+---
+
+## 13. Replay Framework & Validation (Phase 6)
+
+### Purpose
+Validate byte-reduction goals and production-trace coverage.
+
+### Structure
+```
+tests/replay/
+├── replay-trace.ts       # Framework: load trace, invoke tool, measure bytes
+├── traces.json           # Fixture: captured Pancake API responses from production
+└── report.md             # Acceptance criteria: byte-reduction targets per tool
+```
+
+### Validation
+Runs on CI; asserts:
+- Compact projection < target byte size
+- All production fields present in compact masks (no data loss)
+- Graceful fallback to full mode if compression exceeds threshold
+
+---
+
+## 14. Key Architectural Principles
 
 ### 1. Zero State Between Requests
 Each request is independent; no session affinity required.

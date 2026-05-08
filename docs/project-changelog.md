@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Response projection & replay validation (2026-05-08)
+
+**Scope:** Compact response projection layer (json-mask) + Phase 6 replay-trace validation framework + documentation updates.
+
+**Changes:**
+- `src/shared/response-projection.ts` (new): json-mask wrapper with `verbosity` parameter ("compact" | "full")
+- `src/shared/compact-masks.ts` (new): Central registry of compact masks for orders, products, warehouses, address-lookup (50–85% byte reduction)
+- `tests/replay/` (new): Phase 6 validation framework with `replay-trace.ts`, `traces.json` fixture, `report.md` acceptance criteria
+- `pre-commit` hooks: PII guard for tests/fixtures; diacritic check skipped for geo-*.json
+- `docs/code-standards.md`: Added dual-schema gotcha section (critical: tool file schema + tool-registry inline schema must match), response-projection guidance for new tools, batch_update exception note, z.coerce.number() guidance
+- `docs/codebase-summary.md`: Updated Recent Enhancements section
+- `docs/project-roadmap.md`: Added Phase 6 milestone
+
+**API Behavior:** Backward-compatible. New compact mode is default; callers can request full via `verbosity=full` or `fields[]` parameter.
+
+**Impact:** Orders list responses ~50% smaller. Response projection framework established for future tool expansion (combos, promotions, vouchers, CRM, ecommerce, livestream, employees, webhooks, statistics, shop-info backlog).
+
+---
+
 ### Bulk order updates: `batch_update` action (2026-05-06)
 
 **Motivation:** Production trace from a high-volume Zalo sales bot showed 446 `manage_orders` update calls in 6h with peak 117/h, all single-order patches (`{action:"update", note:"Đã ck", order_id:N}`) fan-out 8-10 in one millisecond. Burned upstream rate budget (goclaw enforces 150 tool calls/h per session) and added needless MCP round-trips while every payload had identical shape.

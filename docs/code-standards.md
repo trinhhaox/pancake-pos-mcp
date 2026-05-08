@@ -139,7 +139,7 @@ phone: z.string(),                // Renamed from API
 
 ---
 
-## 4. Tool Implementation Pattern (23 Tools)
+## 4. Tool Implementation Pattern (24 Tools)
 
 ### Template (Must Follow)
 Every tool file follows this exact structure:
@@ -213,6 +213,23 @@ default:
 
 This prevents bugs if a new action is added to schema but not handler.
 
+### Batch Operations Exception: Single-Action-Per-Call Pattern
+**Standard:** Tools handle one action per invocation (create/update/delete are separate calls).
+
+**Exception:** `manage_orders` `batch_update` action (2026-05-06) accepts up to 50 order patches and dispatches in parallel. This is an intentional break from the pattern due to production trace analysis (single-order updates burning rate limit). Other tools should **NOT** follow this pattern without explicit justification.
+
+### Numeric Field Coercion
+When numeric fields are exposed to LLM clients (who may stringify numbers), prefer `z.coerce.number()`:
+
+```typescript
+z.object({
+  page_number: z.coerce.number().int().default(1),  // Accepts "1" or 1
+  price: z.coerce.number().positive(),              // Accepts "99.99" or 99.99
+})
+```
+
+**Rationale:** LLM clients sometimes send stringified numbers from JSON; `coerce` tolerates both forms without breaking.
+
 ### Error Handling in Tools (Avoid Try-Catch Here)
 Errors are caught at tool-registry level, NOT in individual tool handlers:
 
@@ -234,6 +251,63 @@ export async function handleOrdersTool(...) {
   return await client.get("/orders");
 }
 ```
+
+### Dual-Schema Gotcha (CRITICAL)
+Tool schemas exist in TWO places and **MUST stay in sync**:
+
+1. **Tool file** (e.g., `orders-tool.ts`):
+   ```typescript
+   export const ordersToolSchema = z.discriminatedUnion("action", [
+     z.object({ action: z.literal("update"), order_id: z.number(), items: z.array(...) })
+   ]);
+   ```
+
+2. **Tool registry** (e.g., `tool-registry.ts:878`):
+   ```typescript
+   server.tool("manage_orders", "...", {
+     action: z.enum([...]),
+     order_id: z.number().int().optional(),
+     items: z.array(...).optional(),  // ← MUST match schema above
+   })
+   ```
+
+**If they diverge:** LLMs see the flat registry schema, but handler validation uses the inner discriminated union. Result: fields disappear silently during `parse()`. Example: `items` was exposed in registry but missing from UpdateAction union (2026-05-06).
+
+**Verification:** Tests exist in `tests/tools/` to catch dual-schema mismatches (e.g., `orders-tool-schema.test.ts`).
+
+---
+
+## 5. Response Projection Standards
+
+### New Tools Must Include Compact Masks
+When implementing a new tool that returns large objects:
+
+1. **Define compact mask** in `src/shared/compact-masks.ts`:
+   ```typescript
+   export const COMPACT_MASKS = {
+     order: "id,status,bill_full_name,bill_phone_number,items[id,name,quantity,price]",
+     product: "id,name,sku,category_id,images[url]",
+     // Only fields relevant for LLM decision-making
+   };
+   ```
+
+2. **Apply in tool handler** via `project()`:
+   ```typescript
+   import { project } from "../shared/response-projection.js";
+   
+   const result = await client.get("/products");
+   return project(result.data, "compact");  // 50–85% byte reduction
+   ```
+
+3. **Document in tool description** (tool-registry.ts):
+   ```
+   "Compact mode (default) returns id/name/key fields only; 
+    use fields[] parameter with verbosity=full for all fields."
+   ```
+
+**Current Coverage (as of 2026-05-08):**
+- ✓ orders, products, warehouses, address-lookup (compact masks implemented)
+- ○ combos, promotions, vouchers, CRM, ecommerce, livestream, employees, webhooks, statistics, shop-info (backlog)
 
 ---
 
@@ -428,16 +502,23 @@ All tools use same parameter names for consistency.
 
 ## 9. API Path Patterns (Routing Rules)
 
+### Canonical Endpoints
+Always use the latest endpoint path; migrations are documented in changelog:
+- `/geo/*` (CANONICAL since 2026-04-29) — address lookup (formerly `/address/*`)
+- `/partners` — shipping partners (stable)
+
+**Note:** `/address/*` redirects to 404; all new code must use `/geo/*`.
+
 ### Global Prefixes (Bypass Shop Scope)
 These paths are NOT prefixed with `/shops/{shopId}/`:
 - `/partners` → shipping partners (global)
-- `address` → address lookup (global)
+- `/geo` → address lookup (global, canonical)
 
 Example:
 ```typescript
-// Global prefix
+// Global prefix (bypass shop scope)
 await client.get("/partners");                    // /partners
-await client.get("address/provinces");            // /address/provinces
+await client.get("/geo/provinces");               // /geo/provinces (canonical)
 
 // Shop-scoped (default)
 await client.get("/orders");                      // /shops/{shopId}/orders

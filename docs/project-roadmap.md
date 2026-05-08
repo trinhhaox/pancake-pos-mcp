@@ -120,7 +120,26 @@ Pancake POS MCP implementation is **feature-complete** with all 24 tools deploye
 
 ---
 
-## Current Milestone: Analytics Gap Fix (2026-05-06)
+## Current Milestone: Response Projection & Replay Validation (2026-05-08)
+
+**Status:** Completed (compact masks, batch_update, replay framework, Phase 6 validation)
+
+### Completion
+- [x] Compact response projection added (json-mask wrapper, `verbosity` param)
+- [x] Compact masks implemented for orders, products, warehouses, address-lookup (50–85% reduction)
+- [x] `batch_update` action on orders (up to 50 patches/call, parallel dispatch)
+- [x] Replay framework + Phase 6 byte-reduction validation (tests/replay/)
+- [x] Pre-commit PII guard for tests/fixtures
+- [x] Documentation: code-standards.md dual-schema gotcha + response-projection guidance
+- [x] All tests passing
+
+**Impact:** Orders list calls ~50% smaller; high-volume update workloads drop from 117 calls/h to ~3-5 batch calls/h.
+
+**Backlog:** Compact masks for remaining 10 tools (combos, promotions, vouchers, CRM, ecommerce, livestream, employees, webhooks, statistics, shop-info) deferred to future phase.
+
+---
+
+## Previous Milestone: Analytics Gap Fix (2026-05-06)
 
 **Status:** Completed (array serialization, sort enum, aggs preservation, analytics tool)
 
@@ -183,7 +202,7 @@ Pancake POS MCP implementation is **feature-complete** with all 24 tools deploye
 
 ---
 
-## Upcoming: Testing Phase (Weeks 2-3)
+## Upcoming: Testing & Refinement (Post-Phase 6)
 
 ### Unit Tests
 
@@ -223,28 +242,19 @@ Pancake POS MCP implementation is **feature-complete** with all 24 tools deploye
 
 ---
 
-## Upcoming: Documentation Refinement (Week 2)
+## Documentation Maintenance (Continuous, Last Updated 2026-05-08)
 
-### Files to Create/Update
+### Files Status
 
-- [x] README.md (root) — Installation, usage, tools reference
-- [x] docs/project-overview-pdr.md — Requirements and features
-- [x] docs/project-roadmap.md — Timeline and progress (this file)
-- [x] docs/deployment-guide.md — Setup and deployment
-- [x] docs/codebase-summary.md — Already complete, no updates needed
-- [x] docs/system-architecture.md — Already complete, no updates needed
-- [x] docs/code-standards.md — Already complete, no updates needed
-
-### Documentation Status
-
-| Document | Lines | Status |
-|----------|-------|--------|
-| README.md | 280 | Complete |
-| project-overview-pdr.md | 420 | Complete |
-| codebase-summary.md | 433 | Up-to-date |
-| system-architecture.md | 626 | Up-to-date |
-| code-standards.md | 681 | Up-to-date |
-| deployment-guide.md | TBD | In Progress |
+| Document | Lines | Last Update | Status |
+|----------|-------|-------------|--------|
+| README.md | 267 | 2026-05-08 | Current (24 tools documented) |
+| project-overview-pdr.md | 420 | 2026-04-10 | Current |
+| codebase-summary.md | ~450 | 2026-05-08 | Updated: batch_update + compact masks + replay framework |
+| system-architecture.md | 793 | 2026-05-06 | Current |
+| code-standards.md | ~750 | 2026-05-08 | Updated: dual-schema gotcha + response-projection + batch_update exception |
+| project-roadmap.md | ~410 | 2026-05-08 | Updated: Phase 6 completion + backlog |
+| deployment-guide.md | 200+ | 2026-04-10 | Current |
 
 ---
 
@@ -365,27 +375,27 @@ Pancake POS MCP implementation is **feature-complete** with all 24 tools deploye
 
 ---
 
-## Next Actions (Week of 2026-04-10)
+## Next Actions (Week of 2026-05-08)
 
-### Immediate (Today)
+### Immediate (Current Phase)
 
-- [x] Create README.md
-- [x] Create project-overview-pdr.md
-- [x] Verify codebase-summary.md accuracy
-- [ ] Create deployment-guide.md
+- [x] Phase 6: Response projection + replay validation complete
+- [x] Update code-standards.md with dual-schema gotcha + response-projection guidance
+- [x] Update codebase-summary.md with batch_update + compact masks + replay framework
+- [x] Update project-roadmap.md with Phase 6 completion
 
-### Short-Term (This Week)
+### Short-Term (This Sprint)
 
-- [ ] Run type-checking (bun run typecheck)
-- [ ] Set up unit test framework (vitest/bun test)
-- [ ] Document known issues with remediation plan
-- [ ] Review and finalize all documentation
+- [ ] Implement compact masks for remaining 10 tools (backlog phase)
+- [ ] Extend replay framework with additional production traces
+- [ ] Run type-checking & full test suite validation
+- [ ] Review code standards compliance across all 24 tools
 
-### Medium-Term (Next Week)
+### Medium-Term (Next Sprint)
 
-- [ ] Begin unit test implementation
-- [ ] Prepare integration test environment
-- [ ] Code review with focus on known issues
+- [ ] Unit test coverage for new projection layer (response-projection.ts)
+- [ ] Integration tests for batch_update performance validation
+- [ ] Prepare Phase 7: Enhanced error handling or multi-shop support
 - [ ] Beta testing with early adopters
 
 ---

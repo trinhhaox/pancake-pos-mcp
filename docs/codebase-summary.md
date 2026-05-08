@@ -269,23 +269,51 @@ Each tool file (~80-120 lines):
 
 ---
 
-## Recent Enhancements (2026-05-06)
+## Recent Enhancements (2026-05-08)
 
-### 1. Array Serialization Fix (Phase 1)
+### 1. Batch Update on Orders (2026-05-06)
+**Motivation:** Production traces showed 446 single-order updates in 6h, burning rate-limit budget and adding MCP round-trips.
+
+**Solution:** New `batch_update` action on `manage_orders` accepts up to 50 per-order patches (`note`, `status`, `tags`, `note_print`) and dispatches in parallel via `Promise.allSettled`, returning per-item ok/error. Counts as 1 upstream tool action.
+
+**Files:** `tools/orders-tool.ts`, `tools/tool-registry.ts`
+
+### 2. Compact Response Projection (2026-05-08)
+**Feature:** New response-projection layer using json-mask with `verbosity` parameter.
+
+**Coverage:** `orders`, `products`, `warehouses`, `address-lookup` (50–85% byte reduction via compact masks).
+
+**Implementation:** 
+- `src/shared/response-projection.ts` (json-mask wrapper)
+- `src/shared/compact-masks.ts` (central registry of masks per tool)
+- Tool handlers apply via `project(data, "compact")` or `project(data, "full")`
+
+**Files:** `shared/response-projection.ts`, `shared/compact-masks.ts`, updates to 4 tools
+
+**Backlog:** Remaining tools (combos, promotions, vouchers, CRM, ecommerce, livestream, employees, webhooks, statistics, shop-info) lack compact masks — flagged for future phases.
+
+### 3. Replay Framework & Phase 6 Validation (2026-05-08)
+**Framework:** `tests/replay/` with byte-reduction metrics validation against production traces.
+
+**Components:** `replay-trace.ts`, `traces.json` fixture, `report.md` with phase 6 acceptance criteria.
+
+**Files:** `tests/replay/replay-trace.ts`, `tests/replay/traces.json`, `tests/replay/report.md`
+
+### 4. Array Serialization Fix (Phase 1, 2026-05-06)
 **Issue:** Query parameters with arrays were JSON-stringified, triggering HTTP 500 on Pancake API list endpoints.
 
 **Solution:** `buildQueryParams()` now returns `URLSearchParams` and serializes arrays as bracket-style `key[]=v1&key[]=v2`. Empty arrays are omitted. Nested arrays keep inner elements as JSON (e.g. `order_sources=[["-1","314"]]` preserves wire grouping).
 
 **Files:** `api-client/request-builder.ts`
 
-### 2. Sort Options Enum (Phase 2)
+### 5. Sort Options Enum (Phase 2, 2026-05-06)
 **Addition:** `src/shared/sort-options.ts` exports `ORDER_SORT_VALUES` (18 enum values) and `ORDER_SORT_DESCRIPTION`. 
 
 **Impact:** `orders-tool.ts` `option_sort` parameter now uses `z.enum(ORDER_SORT_VALUES)` for strict validation. Tool descriptions expanded to document ANALYTICS PATTERNS (top-N queries with single API call using sort + page_size + fields[]).
 
 **Files:** `shared/sort-options.ts`, `tools/orders-tool.ts`, `tools/tool-registry.ts`
 
-### 3. Preserve Server-Side Aggregations (Phase 3)
+### 6. Preserve Server-Side Aggregations (Phase 3, 2026-05-06)
 **Feature:** Pancake API list endpoints return optional `aggs` (aggregation buckets) alongside paginated data.
 
 **Solution:** 
@@ -295,7 +323,7 @@ Each tool file (~80-120 lines):
 
 **Files:** `shared/schemas.ts`, `api-client/response-parser.ts`, `shared/pagination-helpers.ts`
 
-### 4. Analytics Wrapper Tool (Phase 4)
+### 7. Analytics Wrapper Tool (Phase 4, 2026-05-06)
 **New Tool:** `analytics` (single tool with discriminated union `action`).
 
 **Actions:**
