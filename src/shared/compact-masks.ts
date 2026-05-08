@@ -37,3 +37,14 @@ export const PRODUCT_VARIATIONS_MASK =
   "id,display_id,keyword,retail_price,wholesale_price," +
   "weight,barcode,fields,remain_quantity," +
   "variations_warehouses(warehouse_id,remain_quantity,total_quantity,actual_remain_quantity)";
+
+export const WAREHOUSE_COMPACT_MASK =
+  "id,name,phone_number,address,full_address," +
+  "province_id,district_id,commune_id," +
+  "new_province_id,new_commune_id," +
+  "allow_create_order";
+
+// /geo/provinces, /geo/districts, /geo/communes share the same compact shape.
+// Keeps id+name (display), new_id (OLD→NEW reform mapping post-2025-07-01),
+// district_id+province_id (parent linkage for OLD format).
+export const ADDRESS_LOOKUP_MASK = "id,name,new_id,district_id,province_id";

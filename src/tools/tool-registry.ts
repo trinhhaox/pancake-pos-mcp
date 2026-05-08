@@ -332,6 +332,12 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
       district_id: z.string().optional(),
       commune_id: z.string().optional(),
       allow_create_order: z.boolean().optional(),
+      verbosity: z
+        .enum(["compact", "full"])
+        .optional()
+        .describe(
+          "Response detail level for list/get. 'compact' (default) strips batch/shelf config (~60% smaller). 'full' returns raw Pancake response.",
+        ),
     },
     async (args) => {
       try {
@@ -852,6 +858,12 @@ Examples:
       action: z.enum(["provinces", "districts", "communes"]).describe("provinces: list all (returns both OLD id and new_id). districts: OLD-only, requires OLD province_id. communes: requires province_id (OLD or NEW) OR district_id (OLD); accepts either."),
       province_id: z.string().optional().describe("Province ID. OLD format e.g. '109', or NEW format e.g. '84_VN105'. Required for districts (OLD only) and recommended for communes."),
       district_id: z.string().optional().describe("District ID, OLD format only e.g. '10909' (NEW format has no districts). Optional for communes — narrows OLD results to one district."),
+      verbosity: z
+        .enum(["compact", "full"])
+        .optional()
+        .describe(
+          "Response detail level. 'compact' (default) keeps id/name/new_id/district_id/province_id (~50% smaller). 'full' returns raw response (includes name_en, postcode, country_code, region_type).",
+        ),
     },
     async (args) => {
       try {

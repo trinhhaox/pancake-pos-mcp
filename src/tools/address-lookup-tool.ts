@@ -1,5 +1,14 @@
 import { z } from "zod";
 import type { PancakeHttpClient } from "../api-client/pancake-http-client.js";
+import { project } from "../shared/response-projection.js";
+import { ADDRESS_LOOKUP_MASK } from "../shared/compact-masks.js";
+
+const VerbositySchema = z
+  .enum(["compact", "full"])
+  .optional()
+  .describe(
+    "Response detail level. 'compact' (default) keeps id/name/new_id/district_id/province_id (~50% smaller). 'full' returns raw Pancake response (includes name_en, postcode, country_code, region_type).",
+  );
 
 /**
  * Vietnamese address lookup via Pancake `/geo/*` endpoints (verified 2026-04-28
@@ -21,6 +30,7 @@ import type { PancakeHttpClient } from "../api-client/pancake-http-client.js";
 
 const ProvincesAction = z.object({
   action: z.literal("provinces"),
+  verbosity: VerbositySchema,
 });
 
 const DistrictsAction = z.object({
@@ -28,6 +38,7 @@ const DistrictsAction = z.object({
   province_id: z.string().describe(
     "OLD-format province ID (e.g. '805'). NEW format has no districts.",
   ),
+  verbosity: VerbositySchema,
 });
 
 const CommunesAction = z.object({
@@ -39,6 +50,7 @@ const CommunesAction = z.object({
   district_id: z.string().optional().describe(
     "OLD-format district ID — narrows OLD results to a single district. NEW format does not use this field.",
   ),
+  verbosity: VerbositySchema,
 });
 
 export const addressLookupToolSchema = z.discriminatedUnion("action", [
@@ -53,16 +65,19 @@ export async function handleAddressLookupTool(
   args: AddressLookupToolInput,
   client: PancakeHttpClient,
 ) {
+  const projectArr = (arr: unknown[], verbosity: "compact" | "full" | undefined) =>
+    arr.map((item) => project(item, ADDRESS_LOOKUP_MASK, verbosity));
+
   switch (args.action) {
     case "provinces": {
       const result = await client.get<unknown[]>("geo/provinces");
-      return { data: result.data };
+      return { data: projectArr(result.data, args.verbosity) };
     }
     case "districts": {
       const result = await client.get<unknown[]>("geo/districts", {
         province_id: args.province_id,
       });
-      return { data: result.data };
+      return { data: projectArr(result.data, args.verbosity) };
     }
     case "communes": {
       if (!args.province_id && !args.district_id) {
@@ -74,7 +89,7 @@ export async function handleAddressLookupTool(
       if (args.province_id) params.province_id = args.province_id;
       if (args.district_id) params.district_id = args.district_id;
       const result = await client.get<unknown[]>("geo/communes", params);
-      return { data: result.data };
+      return { data: projectArr(result.data, args.verbosity) };
     }
   }
 }

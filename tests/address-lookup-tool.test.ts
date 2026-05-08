@@ -127,6 +127,73 @@ describe("handleAddressLookupTool — /geo endpoint dispatch", () => {
   });
 });
 
+describe("address lookup compact projection (Phase 5)", () => {
+  const provincesFixture = require("./fixtures/geo-provinces-full-response.json");
+  const communesOldFixture = require("./fixtures/geo-communes-old-full-response.json");
+  const communesNewFixture = require("./fixtures/geo-communes-new-full-response.json");
+
+  it("provinces compact has id, name, new_id; strips name_en/country_code/region_type", async () => {
+    const client = mockClient(async () => provincesFixture.data);
+    const result = (await handleAddressLookupTool(
+      { action: "provinces" },
+      client,
+    )) as { data: Record<string, unknown>[] };
+    expect(result.data.length).toBe(provincesFixture.data.length);
+    const first = result.data[0]!;
+    expect(first).toHaveProperty("id");
+    expect(first).toHaveProperty("name");
+    expect(first).toHaveProperty("new_id");
+    for (const k of ["name_en", "country_code", "region_type"]) {
+      expect(first).not.toHaveProperty(k);
+    }
+  });
+
+  it("communes OLD shape preserves district_id and new_id", async () => {
+    const client = mockClient(async () => communesOldFixture.data);
+    const result = (await handleAddressLookupTool(
+      { action: "communes", province_id: "805" },
+      client,
+    )) as { data: Record<string, unknown>[] };
+    const first = result.data[0]!;
+    expect(first).toHaveProperty("district_id");
+    expect(first).toHaveProperty("new_id");
+    expect(first).toHaveProperty("province_id");
+  });
+
+  it("communes NEW shape: district_id is null, new_id may be null — both projected through", async () => {
+    const client = mockClient(async () => communesNewFixture.data);
+    const result = (await handleAddressLookupTool(
+      { action: "communes", province_id: "84_VN132" },
+      client,
+    )) as { data: Record<string, unknown>[] };
+    const first = result.data[0]!;
+    expect(first).toHaveProperty("id");
+    expect(first).toHaveProperty("name");
+    // district_id present but null in NEW shape
+    expect("district_id" in first).toBe(true);
+  });
+
+  it("verbosity=full returns raw response", async () => {
+    const client = mockClient(async () => provincesFixture.data);
+    const result = (await handleAddressLookupTool(
+      { action: "provinces", verbosity: "full" },
+      client,
+    )) as { data: Record<string, unknown>[] };
+    expect(result.data[0]).toEqual(provincesFixture.data[0]);
+  });
+
+  it("compact size <= 60% of full for provinces", async () => {
+    const fullBytes = JSON.stringify(provincesFixture.data).length;
+    const client = mockClient(async () => provincesFixture.data);
+    const result = (await handleAddressLookupTool(
+      { action: "provinces" },
+      client,
+    )) as { data: unknown };
+    const compactBytes = JSON.stringify(result.data).length;
+    expect(compactBytes / fullBytes).toBeLessThan(0.6);
+  });
+});
+
 describe("buildRequestUrl — geo is a global prefix (no shop scope)", () => {
   it("geo path is not prefixed with /shops/{id}/", async () => {
     const { buildRequestUrl } = await import("../src/api-client/request-builder.js");

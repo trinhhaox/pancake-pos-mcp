@@ -2,16 +2,27 @@ import { z } from "zod";
 import type { PancakeHttpClient } from "../api-client/pancake-http-client.js";
 import { formatPaginatedResult } from "../shared/pagination-helpers.js";
 import { PaginationParams } from "../shared/schemas.js";
+import { project } from "../shared/response-projection.js";
+import { WAREHOUSE_COMPACT_MASK } from "../shared/compact-masks.js";
+
+const VerbositySchema = z
+  .enum(["compact", "full"])
+  .optional()
+  .describe(
+    "Response detail level. 'compact' (default) strips batch/shelf config (~60% smaller). 'full' returns raw Pancake response.",
+  );
 
 const ListAction = z.object({
   action: z.literal("list"),
   search: z.string().optional().describe("Search by warehouse name"),
+  verbosity: VerbositySchema,
   ...PaginationParams.shape,
 });
 
 const GetAction = z.object({
   action: z.literal("get"),
   warehouse_id: z.string().uuid().describe("Warehouse UUID"),
+  verbosity: VerbositySchema,
 });
 
 const CreateAction = z.object({
@@ -55,13 +66,19 @@ export type WarehousesToolInput = z.infer<typeof warehousesToolSchema>;
 export async function handleWarehousesTool(args: WarehousesToolInput, client: PancakeHttpClient) {
   switch (args.action) {
     case "list": {
-      const { action, ...params } = args;
+      const { action, verbosity, ...params } = args;
       const result = await client.getList("warehouses", params);
-      return formatPaginatedResult(result);
+      const formatted = formatPaginatedResult(result);
+      if (Array.isArray(formatted.data)) {
+        formatted.data = formatted.data.map((w) =>
+          project(w, WAREHOUSE_COMPACT_MASK, verbosity),
+        );
+      }
+      return formatted;
     }
     case "get": {
       const result = await client.get(`warehouses/${args.warehouse_id}`);
-      return result.data;
+      return project(result.data, WAREHOUSE_COMPACT_MASK, args.verbosity);
     }
     case "create": {
       const { action, ...body } = args;
