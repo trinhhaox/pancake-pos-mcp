@@ -160,31 +160,56 @@ Workers URL: `https://pancake-pos-mcp.<your-subdomain>.workers.dev/mcp`
 
 ## Available Tools
 
-| Tool | Phase | Description |
-|------|-------|-------------|
-| `manage_orders` | 1 | Create, read, update, delete, print, ship, and manage order status |
-| `manage_products` | 1 | Manage product catalog with variations and pricing |
-| `manage_customers` | 1 | Customer CRUD, reward points, transaction history |
-| `manage_inventory` | 1 | Inventory reports filtered by warehouse, category, supplier |
-| `manage_warehouses` | 2 | Warehouse CRUD and configuration |
-| `manage_suppliers` | 2 | Supplier contact and profile management |
-| `manage_purchases` | 2 | Purchase orders and inbound inventory |
-| `manage_transfers` | 2 | Warehouse-to-warehouse transfer management |
-| `manage_stocktaking` | 2 | Physical inventory count records |
-| `manage_returns` | 3 | Order returns and exchange processing |
-| `manage_combos` | 3 | Product bundle deals and time-limited offers |
-| `manage_promotions` | 3 | Discount campaigns (percent/amount-based) |
-| `manage_vouchers` | 3 | Voucher code generation and usage tracking |
-| `manage_crm_contacts` | 4 | CRM contact CRUD and relationship management |
-| `manage_crm_deals` | 4 | Sales pipeline opportunities and stages |
-| `manage_crm_activities` | 4 | Calls, meetings, tasks, notes tied to contacts/deals |
-| `manage_ecommerce` | 4 | Multi-channel sync (Shopee, Lazada, TikTok) |
-| `manage_livestream` | 4 | Live selling session management and scheduling |
-| `manage_employees` | 5 | Staff management and warehouse assignments |
-| `manage_webhooks` | 5 | Event subscription and webhook configuration |
-| `get_statistics` | 5 | Analytics for inventory, sales, orders with grouping |
-| `get_shop_info` | 5 | Shop profile information and settings |
-| `lookup_address` | 5 | Vietnamese address hierarchy (provinces → districts → communes) |
+24 tools, grouped by business domain.
+
+### Core POS
+
+| Tool | Description |
+|------|-------------|
+| `manage_orders` | Create, read, update, delete, print, ship, manage status; `batch_update` patches up to 50 orders/call |
+| `manage_products` | Product catalog with variations and pricing |
+| `manage_customers` | Customer CRUD, reward points, transaction history |
+| `manage_inventory` | Inventory reports filtered by warehouse, category, supplier |
+
+### Supply Chain & Warehousing
+
+| Tool | Description |
+|------|-------------|
+| `manage_warehouses` | Warehouse CRUD and configuration |
+| `manage_suppliers` | Supplier contact and profile management |
+| `manage_purchases` | Purchase orders and inbound inventory |
+| `manage_transfers` | Warehouse-to-warehouse transfer management |
+| `manage_stocktaking` | Physical inventory count records |
+
+### Sales Extensions
+
+| Tool | Description |
+|------|-------------|
+| `manage_returns` | Order returns and exchange processing |
+| `manage_combos` | Product bundle deals and time-limited offers |
+| `manage_promotions` | Discount campaigns (percent/amount-based) |
+| `manage_vouchers` | Voucher code generation and usage tracking |
+
+### CRM & Multi-Channel
+
+| Tool | Description |
+|------|-------------|
+| `manage_crm_contacts` | CRM contact CRUD and relationship management |
+| `manage_crm_deals` | Sales pipeline opportunities and stages |
+| `manage_crm_activities` | Calls, meetings, tasks, notes tied to contacts/deals |
+| `manage_ecommerce` | Multi-channel sync (Shopee, Lazada, TikTok) |
+| `manage_livestream` | Live selling session management and scheduling |
+
+### Operations & Business Intelligence
+
+| Tool | Description |
+|------|-------------|
+| `manage_employees` | Staff management and warehouse assignments |
+| `manage_webhooks` | Event subscription and webhook configuration |
+| `get_statistics` | Inventory, sales, orders with grouping |
+| `analytics` | Top orders + revenue summary via server-side ES aggregations (no pagination loops) |
+| `get_shop_info` | Shop profile information and settings |
+| `lookup_address` | Vietnamese address hierarchy via `/geo/*` (OLD 3-tier + NEW 2-tier post-2025-07-01) |
 
 ## Available Resources
 
@@ -202,11 +227,14 @@ Static reference resources (no authentication required):
 
 ## Architecture
 
-- **API Client:** Token-bucket rate limiting (1000/min, 10000/hour), exponential backoff retries (3 attempts)
+- **API Client:** Token-bucket rate limiting (1000/min, 10000/hour), exponential backoff retries (3 attempts; Workers: 2)
 - **Tools:** 24 MCP tools organized by business domain
-- **Schema Validation:** Zod with discriminated unions for strict runtime validation
+- **Schema Validation:** Zod with discriminated unions, `z.coerce.number()` for stringified numbers from LLM clients
 - **Transport:** Stdio (default) + Streamable HTTP + Cloudflare Workers with optional Bearer token auth
 - **Error Handling:** Structured error responses with code and message
+- **Compact responses:** `verbosity: "compact"` (default) trims payloads 60–85% on orders, products, warehouses, lookup_address; `"full"` for debugging
+- **Bulk ops:** `manage_orders` `batch_update` action patches up to 50 orders per call
+- **Replay validation:** `tests/replay/` re-runs production traces against local handlers to gate response-size regressions
 
 ## Development
 
