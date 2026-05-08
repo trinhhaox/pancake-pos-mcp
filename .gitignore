@@ -48,3 +48,7 @@ skills/
 
 # Journals (internal)
 docs/journals/
+
+# Phase 6 replay: traces.json contains business search history
+# (regenerable from goclaw DB; see tests/replay/replay-trace.ts header)
+tests/replay/traces.json
