@@ -63,10 +63,19 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
 - Newest order of customer:
     list({ customer_id, option_sort: "inserted_at_desc", page_size: 1, fields: ["id","total_price","inserted_at"] })
 - Top 10 by item count this month:
-    list({ option_sort: "product_quantity_desc", page_size: 10, fields: ["id","product_quantity","total_price"], startDateTime, endDateTime })`,
+    list({ option_sort: "product_quantity_desc", page_size: 10, fields: ["id","product_quantity","total_price"], startDateTime, endDateTime })
+
+DELETE — only status=0 (Mới) orders are deletable. order_id defaults to display_id (small per-shop number, e.g. 521 or 'A483'); set id_kind='id' for internal Pancake id. status>=1 → use action='update' with status=... to transition. Other actions (get/update/print/ship) still take internal id.`,
     {
       action: z.enum(["list", "get", "create", "update", "batch_update", "delete", "print", "ship", "call_later"]).describe("Action to perform"),
-      order_id: z.coerce.number().int().optional().describe("Order ID (required for get/update/delete/print/ship)"),
+      order_id: z
+        .union([z.coerce.number().int(), z.string().min(1)])
+        .optional()
+        .describe("Order ID (required for get/update/delete/print/ship)"),
+      id_kind: z
+        .enum(["display_id", "id"])
+        .default("display_id")
+        .describe("delete only — id space of order_id. Defaults to 'display_id' (small per-shop number). Set 'id' for internal Pancake id."),
       updates: z
         .array(
           z.object({

@@ -5,6 +5,12 @@ import {
   type OrdersToolInput,
 } from "../src/tools/orders-tool.js";
 import type { PancakeHttpClient } from "../src/api-client/pancake-http-client.js";
+import { formatToolError, PancakeApiError } from "../src/shared/error-handler.js";
+import successFixture from "./fixtures/orders-delete/success-resolve.json";
+import notFoundFixture from "./fixtures/orders-delete/not-found.json";
+import ambiguousFixture from "./fixtures/orders-delete/ambiguous.json";
+import notDraftFixture from "./fixtures/orders-delete/not-draft.json";
+import upstream404Fixture from "./fixtures/orders-delete/upstream-404.json";
 
 function mockClient(overrides: Partial<PancakeHttpClient> = {}): PancakeHttpClient {
   return {
@@ -16,6 +22,27 @@ function mockClient(overrides: Partial<PancakeHttpClient> = {}): PancakeHttpClie
     delete: vi.fn().mockResolvedValue({ success: true }),
     ...overrides,
   } as unknown as PancakeHttpClient;
+}
+
+function makeListResponse<T>(rows: T[]) {
+  return {
+    data: rows,
+    success: true,
+    page_number: 1,
+    page_size: 20,
+    total_entries: rows.length,
+    total_pages: 1,
+  };
+}
+
+async function captureToolError(fn: () => Promise<unknown>): Promise<{ code: string; message: string }> {
+  try {
+    await fn();
+  } catch (err) {
+    const formatted = formatToolError(err);
+    return JSON.parse(formatted.content[0]!.text) as { code: string; message: string };
+  }
+  throw new Error("expected handler to throw, but it did not");
 }
 
 const baseCreate = {
@@ -574,5 +601,259 @@ describe("orders compact projection (Phase 2)", () => {
     expect((result.warnings as string[])[0]).toMatch(/total_discount/);
     // compact projection still applied to put response
     expect(result).not.toHaveProperty("p_utm_source");
+  });
+});
+
+describe("handleOrdersTool — delete (display_id resolver + status pre-check)", () => {
+  it("happy path display_id (default): resolves via getList, pre-checks status:0, deletes by internal id", async () => {
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(
+        makeListResponse([{ id: 109502, system_id: 521, status: 0 }]),
+      ),
+      get: vi.fn().mockResolvedValue({ data: { id: 109502, status: 0 }, success: true }),
+      delete: vi.fn().mockResolvedValue({ success: true }),
+    });
+    const parsed = ordersToolSchema.parse({ action: "delete", order_id: 521 });
+    const result = await handleOrdersTool(parsed, client);
+
+    expect(client.getList).toHaveBeenCalledWith(
+      "orders",
+      expect.objectContaining({
+        search: "521",
+        filter_status: [0],
+        page_size: 200,
+      }),
+    );
+    expect(client.get).toHaveBeenCalledWith("orders/109502");
+    expect(client.delete).toHaveBeenCalledWith("orders/109502");
+    expect(result).toEqual({ success: true, message: "Order 521 deleted" });
+  });
+
+  it("internal-id passthrough: id_kind:'id' skips getList, calls get + delete with given id", async () => {
+    const getList = vi.fn();
+    const client = mockClient({
+      getList,
+      get: vi.fn().mockResolvedValue({ data: { id: 109502, status: 0 }, success: true }),
+      delete: vi.fn().mockResolvedValue({ success: true }),
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "delete",
+      order_id: 109502,
+      id_kind: "id",
+    });
+    const result = await handleOrdersTool(parsed, client);
+    expect(getList).not.toHaveBeenCalled();
+    expect(client.get).toHaveBeenCalledWith("orders/109502");
+    expect(client.delete).toHaveBeenCalledWith("orders/109502");
+    expect((result as { message: string }).message).toBe("Order 109502 deleted");
+  });
+
+  it("NOT_FOUND_DISPLAY_ID: 0 matches → structured code, delete NOT called", async () => {
+    const deleteMock = vi.fn();
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(makeListResponse([])),
+      delete: deleteMock,
+    });
+    const parsed = ordersToolSchema.parse({ action: "delete", order_id: 999 });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("NOT_FOUND_DISPLAY_ID");
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("AMBIGUOUS_DISPLAY_ID: 2+ matches → structured code", async () => {
+    const deleteMock = vi.fn();
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(
+        makeListResponse([
+          { id: 1, system_id: 521, status: 0 },
+          { id: 2, system_id: 521, status: 0 },
+        ]),
+      ),
+      delete: deleteMock,
+    });
+    const parsed = ordersToolSchema.parse({ action: "delete", order_id: 521 });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("AMBIGUOUS_DISPLAY_ID");
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("NOT_DRAFT: status !== 0 → structured code with hint to use update; delete NOT called", async () => {
+    const deleteMock = vi.fn();
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(
+        makeListResponse([{ id: 109502, system_id: 521, status: 0 }]),
+      ),
+      get: vi.fn().mockResolvedValue({ data: { id: 109502, status: 1 }, success: true }),
+      delete: deleteMock,
+    });
+    const parsed = ordersToolSchema.parse({ action: "delete", order_id: 521 });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("NOT_DRAFT");
+    expect(out.message).toMatch(/update/);
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("STATUS_UNKNOWN: missing status field → fail-closed (not silently treated as draft)", async () => {
+    const deleteMock = vi.fn();
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(
+        makeListResponse([{ id: 109502, system_id: 521, status: 0 }]),
+      ),
+      get: vi.fn().mockResolvedValue({ data: { id: 109502 }, success: true }),
+      delete: deleteMock,
+    });
+    const parsed = ordersToolSchema.parse({ action: "delete", order_id: 521 });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("STATUS_UNKNOWN");
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("fallback page-scan: search returns 0 → page-scan finds the order", async () => {
+    const getList = vi
+      .fn()
+      // stage 1: search returns nothing (search doesn't index system_id on this shop)
+      .mockResolvedValueOnce(makeListResponse([]))
+      // stage 2 page 1: 200 unrelated rows
+      .mockResolvedValueOnce(
+        makeListResponse(
+          Array.from({ length: 200 }, (_, i) => ({ id: 1000 + i, system_id: 1000 + i, status: 0 })),
+        ),
+      )
+      // stage 2 page 2: target appears here
+      .mockResolvedValueOnce(
+        makeListResponse([{ id: 109502, system_id: 521, status: 0 }]),
+      );
+    const client = mockClient({
+      getList,
+      get: vi.fn().mockResolvedValue({ data: { id: 109502, status: 0 }, success: true }),
+      delete: vi.fn().mockResolvedValue({ success: true }),
+    });
+    const parsed = ordersToolSchema.parse({ action: "delete", order_id: 521 });
+    const result = await handleOrdersTool(parsed, client);
+    expect(getList).toHaveBeenCalledTimes(3);
+    expect(getList).toHaveBeenNthCalledWith(
+      2,
+      "orders",
+      expect.objectContaining({ filter_status: [0], page_number: 1, page_size: 200 }),
+    );
+    expect(getList).toHaveBeenNthCalledWith(
+      3,
+      "orders",
+      expect.objectContaining({ filter_status: [0], page_number: 2, page_size: 200 }),
+    );
+    expect(client.delete).toHaveBeenCalledWith("orders/109502");
+    expect((result as { message: string }).message).toBe("Order 521 deleted");
+  });
+
+  it("fallback page-scan: 5-page cap exhausted → NOT_FOUND_DISPLAY_ID with hint", async () => {
+    const fullPage = makeListResponse(
+      Array.from({ length: 200 }, (_, i) => ({ id: 1000 + i, system_id: 1000 + i, status: 0 })),
+    );
+    const getList = vi
+      .fn()
+      .mockResolvedValueOnce(makeListResponse([]))
+      .mockResolvedValue(fullPage);
+    const deleteMock = vi.fn();
+    const client = mockClient({ getList, delete: deleteMock });
+    const parsed = ordersToolSchema.parse({ action: "delete", order_id: 521 });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("NOT_FOUND_DISPLAY_ID");
+    expect(out.message).toMatch(/scanned 1000/);
+    // 1 search call + 5 page-scan calls
+    expect(getList).toHaveBeenCalledTimes(6);
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("LIKELY_INTERNAL_ID: internal-id-shaped input (>1M) with default id_kind → guard rejects without HTTP", async () => {
+    const getList = vi.fn();
+    const deleteMock = vi.fn();
+    const client = mockClient({ getList, delete: deleteMock });
+    const parsed = ordersToolSchema.parse({ action: "delete", order_id: 5_000_000 });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("LIKELY_INTERNAL_ID");
+    expect(out.message).toMatch(/id_kind/);
+    expect(getList).not.toHaveBeenCalled();
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("handleOrdersTool — delete fixture replay", () => {
+  it("success-resolve fixture: deletes and returns echo of caller input", async () => {
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(successFixture.list),
+      get: vi.fn().mockResolvedValue({ data: successFixture.detail, success: true }),
+      delete: vi.fn().mockResolvedValue(successFixture.delete),
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "delete",
+      order_id: successFixture.input.display_id,
+    });
+    const result = await handleOrdersTool(parsed, client);
+    expect(result).toEqual({
+      success: true,
+      message: `Order ${successFixture.input.display_id} deleted`,
+    });
+    expect(client.delete).toHaveBeenCalledWith(`orders/${successFixture.detail.id}`);
+  });
+
+  it("not-found fixture: code=NOT_FOUND_DISPLAY_ID, delete not called", async () => {
+    const deleteMock = vi.fn();
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(notFoundFixture.list),
+      delete: deleteMock,
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "delete",
+      order_id: notFoundFixture.input.display_id,
+    });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("NOT_FOUND_DISPLAY_ID");
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("ambiguous fixture: code=AMBIGUOUS_DISPLAY_ID, lists candidate ids", async () => {
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(ambiguousFixture.list),
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "delete",
+      order_id: ambiguousFixture.input.display_id,
+    });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("AMBIGUOUS_DISPLAY_ID");
+    for (const row of ambiguousFixture.list.data) {
+      expect(out.message).toContain(String(row.id));
+    }
+  });
+
+  it("not-draft fixture: code=NOT_DRAFT, hint mentions update", async () => {
+    const deleteMock = vi.fn();
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(notDraftFixture.list),
+      get: vi.fn().mockResolvedValue({ data: notDraftFixture.detail, success: true }),
+      delete: deleteMock,
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "delete",
+      order_id: notDraftFixture.input.display_id,
+    });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("NOT_DRAFT");
+    expect(out.message).toMatch(/update/);
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("upstream-404 fixture: pre-check GET 404 → code=ORDER_NOT_FOUND", async () => {
+    const err = upstream404Fixture.detail_error;
+    const client = mockClient({
+      getList: vi.fn().mockResolvedValue(upstream404Fixture.list),
+      get: vi.fn().mockRejectedValue(new PancakeApiError(err.code, err.message, err.httpStatus)),
+    });
+    const parsed = ordersToolSchema.parse({
+      action: "delete",
+      order_id: upstream404Fixture.input.display_id,
+    });
+    const out = await captureToolError(() => handleOrdersTool(parsed, client));
+    expect(out.code).toBe("ORDER_NOT_FOUND");
   });
 });

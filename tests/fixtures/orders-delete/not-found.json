@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "scenario": "display_id has no match among status=0 orders",
+    "captured_at": "synthesized 2026-05-09",
+    "captured_from": "synthesized; getList returns empty data array",
+    "redactions": []
+  },
+  "input": {
+    "display_id": 999
+  },
+  "list": {
+    "data": [],
+    "success": true,
+    "page_number": 1,
+    "page_size": 200,
+    "total_entries": 0,
+    "total_pages": 1
+  }
+}

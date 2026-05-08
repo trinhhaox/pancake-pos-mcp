@@ -1,0 +1,22 @@
+{
+  "_meta": {
+    "scenario": "Two orders share the same per-shop number (rare, possible cross-source)",
+    "captured_at": "synthesized 2026-05-09",
+    "captured_from": "hand-crafted from success-resolve template; uses system_id (the field Pancake actually returns)",
+    "redactions": []
+  },
+  "input": {
+    "display_id": 521
+  },
+  "list": {
+    "data": [
+      { "id": 109502, "system_id": 521, "status": 0 },
+      { "id": 109510, "system_id": 521, "status": 0 }
+    ],
+    "success": true,
+    "page_number": 1,
+    "page_size": 200,
+    "total_entries": 2,
+    "total_pages": 1
+  }
+}

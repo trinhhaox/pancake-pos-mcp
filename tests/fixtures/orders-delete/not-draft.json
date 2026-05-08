@@ -1,0 +1,26 @@
+{
+  "_meta": {
+    "scenario": "Order resolved (status=0 in list) but pre-check GET shows status=1 — race or stale list",
+    "captured_at": "synthesized 2026-05-09",
+    "captured_from": "hand-crafted; mutate detail.status from success template",
+    "redactions": []
+  },
+  "input": {
+    "display_id": 522
+  },
+  "list": {
+    "data": [
+      { "id": 109503, "system_id": 522, "status": 0 }
+    ],
+    "success": true,
+    "page_number": 1,
+    "page_size": 200,
+    "total_entries": 1,
+    "total_pages": 1
+  },
+  "detail": {
+    "id": 109503,
+    "system_id": 522,
+    "status": 1
+  }
+}

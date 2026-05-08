@@ -10,6 +10,7 @@ import {
 import { ORDER_SORT_VALUES, ORDER_SORT_DESCRIPTION } from "../shared/sort-options.js";
 import { project } from "../shared/response-projection.js";
 import { ORDER_COMPACT_MASK } from "../shared/compact-masks.js";
+import { PancakeApiError } from "../shared/error-handler.js";
 
 const VerbositySchema = z
   .enum(["compact", "full"])
@@ -197,7 +198,18 @@ const UpdateAction = z.object({
 
 const DeleteAction = z.object({
   action: z.literal("delete"),
-  order_id: z.coerce.number().int().describe("Order ID to delete (only status=0 orders)"),
+  order_id: z
+    .union([z.coerce.number().int(), z.string().min(1)])
+    .describe(
+      "Order identifier. Defaults to display_id (the small per-shop number, e.g. 521 or 'A483'). " +
+        "Set id_kind='id' to pass the internal Pancake id directly.",
+    ),
+  id_kind: z
+    .enum(["display_id", "id"])
+    .default("display_id")
+    .describe(
+      "Which id space order_id is in. 'display_id' (default) — small per-shop sequential code; resolver finds internal id. 'id' — large internal Pancake id; skip resolver.",
+    ),
 });
 
 // Single-update payload for batch_update. Excludes items[] (would require per-order
@@ -262,6 +274,89 @@ export const ordersToolSchema = z.discriminatedUnion("action", [
 ]);
 
 export type OrdersToolInput = z.infer<typeof ordersToolSchema>;
+
+// Phase 0 probe (2026-05-09 against real sandbox shop): Pancake list endpoint
+// IGNORES filter_display_id / filter_system_id / filter_id (returns full status=0
+// page regardless). The user-facing per-shop number is exposed as `system_id` in
+// the response (some shops also surface `display_id`; `id` mirrors `system_id`
+// in shops with small order counts). Resolver post-filters strict-equal against
+// `system_id ?? display_id ?? id` to handle shop variance.
+//
+// Two-stage lookup:
+//   1. Fast path: `search=<n>` + filter_status:[0] (1 request, narrow result).
+//      Pancake `search` is fuzzy multi-field — may not index system_id on every
+//      shop. If it does, we get ≤200 candidates and post-filter to exact match.
+//   2. Fallback: bounded page-scan over filter_status:[0] (up to RESOLVER_MAX_PAGES
+//      pages × 200 rows). Triggers when stage 1 returns 0 exact matches. Catches
+//      shops where `search` doesn't reach system_id.
+const RESOLVER_MAX_PAGES = 5; // 5 × 200 = 1000 status=0 orders max
+
+async function resolveOrderDisplayId(
+  client: PancakeHttpClient,
+  displayId: number | string,
+): Promise<number> {
+  if (typeof displayId === "number" && displayId > 1_000_000) {
+    throw new PancakeApiError(
+      "LIKELY_INTERNAL_ID",
+      `Order id ${displayId} looks like an internal Pancake id, not a display_id. ` +
+        `Pass id_kind:"id" if intentional.`,
+      400,
+    );
+  }
+  type Row = { id: number; system_id?: number | string; display_id?: number | string };
+  const target = String(displayId);
+  const matchKey = (r: Row): string =>
+    String(r.system_id ?? r.display_id ?? r.id);
+
+  // Stage 1: search-narrowed
+  const search = await client.getList<Row>("orders", {
+    search: target,
+    filter_status: [0],
+    page_size: 200,
+  });
+  let matched = (search.data ?? []).filter((r) => matchKey(r) === target);
+
+  // Stage 2: fallback page-scan (only when stage 1 found nothing)
+  let scannedAll = true;
+  if (matched.length === 0) {
+    const collected: Row[] = [];
+    for (let page = 1; page <= RESOLVER_MAX_PAGES; page++) {
+      const res = await client.getList<Row>("orders", {
+        filter_status: [0],
+        page_number: page,
+        page_size: 200,
+      });
+      const rows = res.data ?? [];
+      for (const r of rows) {
+        if (matchKey(r) === target) collected.push(r);
+      }
+      if (rows.length < 200) break;
+      if (page === RESOLVER_MAX_PAGES) scannedAll = false;
+    }
+    matched = collected;
+  }
+
+  if (matched.length === 0) {
+    throw new PancakeApiError(
+      "NOT_FOUND_DISPLAY_ID",
+      `Order with display_id ${displayId} not found among status=0 orders` +
+        (scannedAll ? "" : ` (scanned ${RESOLVER_MAX_PAGES * 200} most recent; older orders not searched)`) +
+        `. If status >= 1 use action="update" to transition; ` +
+        `if you have the internal id retry with id_kind:"id".`,
+      404,
+    );
+  }
+  if (matched.length > 1) {
+    const ids = matched.map((r) => r.id).join(", ");
+    throw new PancakeApiError(
+      "AMBIGUOUS_DISPLAY_ID",
+      `${matched.length} orders match display_id ${displayId} (ids: ${ids}). ` +
+        `Use id_kind:"id" with the internal id.`,
+      409,
+    );
+  }
+  return Number(matched[0]!.id);
+}
 
 export async function handleOrdersTool(args: OrdersToolInput, client: PancakeHttpClient) {
   switch (args.action) {
@@ -367,7 +462,59 @@ export async function handleOrdersTool(args: OrdersToolInput, client: PancakeHtt
       };
     }
     case "delete": {
-      await client.delete(`orders/${args.order_id}`);
+      const internalId =
+        args.id_kind === "display_id"
+          ? await resolveOrderDisplayId(client, args.order_id)
+          : Number(args.order_id);
+
+      try {
+        const cur = await client.get<{ status?: number }>(`orders/${internalId}`);
+        if (cur.data.status === undefined) {
+          throw new PancakeApiError(
+            "STATUS_UNKNOWN",
+            `Cannot verify status of order ${internalId}; refusing to delete.`,
+            500,
+          );
+        }
+        if (cur.data.status !== 0) {
+          throw new PancakeApiError(
+            "NOT_DRAFT",
+            `Order ${internalId} is at status ${cur.data.status}; ` +
+              `only status=0 (Mới) orders are deletable. ` +
+              `Use action="update" with status=... to transition.`,
+            409,
+          );
+        }
+      } catch (err) {
+        if (
+          err instanceof PancakeApiError &&
+          err.httpStatus === 404 &&
+          err.code === "NOT_FOUND"
+        ) {
+          throw new PancakeApiError(
+            "ORDER_NOT_FOUND",
+            `Order ${internalId} not found upstream during status pre-check. ` +
+              `It may have been removed or the id is invalid.`,
+            404,
+          );
+        }
+        throw err;
+      }
+
+      try {
+        await client.delete(`orders/${internalId}`);
+      } catch (err) {
+        if (err instanceof PancakeApiError && err.httpStatus === 404) {
+          throw new PancakeApiError(
+            "ORDER_GONE",
+            `Order ${internalId} status=0 confirmed but DELETE returned 404; ` +
+              `likely raced (concurrent transition) or removed between pre-check and delete.`,
+            404,
+          );
+        }
+        throw err;
+      }
+
       return { success: true, message: `Order ${args.order_id} deleted` };
     }
     case "print": {

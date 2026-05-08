@@ -1,0 +1,36 @@
+{
+  "_meta": {
+    "scenario": "Successful resolve + status pre-check + delete (real sandbox capture, NOT actually deleted)",
+    "captured_at": "2026-05-08T18:40:29.086Z",
+    "captured_from": "live shop 4071***, GET /orders, GET /orders/{id} — DELETE NOT performed",
+    "redactions": [
+      "PII fields stripped from list/detail; only resolver-relevant fields retained"
+    ]
+  },
+  "input": {
+    "display_id": 570
+  },
+  "list": {
+    "data": [
+      {
+        "id": 570,
+        "system_id": 570,
+        "status": 0
+      }
+    ],
+    "success": true,
+    "page_number": 1,
+    "page_size": 200,
+    "total_entries": 1,
+    "total_pages": 1
+  },
+  "detail": {
+    "id": 570,
+    "system_id": 570,
+    "display_id": null,
+    "status": 0
+  },
+  "delete": {
+    "success": true
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "_meta": {
+    "scenario": "Resolver passes; pre-check GET upstream returns 404 → ORDER_NOT_FOUND",
+    "captured_at": "synthesized 2026-05-09",
+    "captured_from": "hand-crafted; mock client.get throws PancakeApiError code=NOT_FOUND status=404",
+    "redactions": []
+  },
+  "input": {
+    "display_id": 523
+  },
+  "list": {
+    "data": [
+      { "id": 109504, "system_id": 523, "status": 0 }
+    ],
+    "success": true,
+    "page_number": 1,
+    "page_size": 200,
+    "total_entries": 1,
+    "total_pages": 1
+  },
+  "detail_error": {
+    "code": "NOT_FOUND",
+    "message": "Page not found",
+    "httpStatus": 404
+  }
+}
