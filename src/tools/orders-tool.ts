@@ -15,7 +15,7 @@ const VerbositySchema = z
   .enum(["compact", "full"])
   .optional()
   .describe(
-    "Response detail level. 'compact' (default) returns essential fields only (~85% smaller). 'full' returns raw Pancake API response.",
+    "Response detail level. 'compact' (default) returns essential fields only (~85% smaller). 'full' returns raw Pancake response — INCLUDES editor_id/creator_id which equal the api_key UUID; avoid in logged contexts.",
   );
 
 const CreateShippingAddressSchema = VietnamAddressSchema.extend({

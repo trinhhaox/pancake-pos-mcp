@@ -159,7 +159,7 @@ ANALYTICS PATTERNS (use list with sort+limit+fields, NOT pagination loop):
         .enum(["compact", "full"])
         .optional()
         .describe(
-          "Response detail level for list/get/create/update. 'compact' (default) returns essential fields only (~85% smaller). 'full' returns raw Pancake response.",
+          "Response detail level for list/get/create/update. 'compact' (default) returns essential fields only (~85% smaller). 'full' returns raw Pancake response — INCLUDES editor_id/creator_id which equal the api_key UUID; avoid in logged contexts.",
         ),
     },
     async (args) => {
