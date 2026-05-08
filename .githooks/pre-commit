@@ -28,6 +28,12 @@ for f in $files; do
 
   echo "Scanning $f"
 
+  # Geo fixtures (provinces/districts/communes) contain public Vietnamese
+  # administrative names with diacritics — NOT PII. Skip diacritic check
+  # for these but still scan for api_key + phone.
+  is_geo=0
+  case "$f" in tests/fixtures/geo-*.json) is_geo=1 ;; esac
+
   # 1. API key — hex form
   if [ -n "$api_key" ] && printf '%s' "$staged" | grep -q "$api_key"; then
     report "$f: api_key (hex form) leaked"
@@ -59,14 +65,17 @@ for f in $files; do
     report "$f: real VN phone in phone_numbers array"
   fi
 
-  # 4. Vietnamese diacritics in name/address fields
-  diacritic_class='àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ'
-  bad_diacritic=$(printf '%s' "$staged" \
-    | grep -oE "\"(bill_full_name|full_name|name|address|full_address|new_full_address|note|province_name|district_name|commune_name)\"[[:space:]]*:[[:space:]]*\"[^\"]*[$diacritic_class][^\"]*\"" \
-    || true)
-  if [ -n "$bad_diacritic" ]; then
-    report "$f: Vietnamese-diacritic text in name/address field"
-    printf '%s\n' "$bad_diacritic" | head -3 | sed 's/^/      /'
+  # 4. Vietnamese diacritics in name/address fields (skip geo fixtures —
+  #    province/district/commune names are public admin reference data)
+  if [ $is_geo -eq 0 ]; then
+    diacritic_class='àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ'
+    bad_diacritic=$(printf '%s' "$staged" \
+      | grep -oE "\"(bill_full_name|full_name|name|address|full_address|new_full_address|note|province_name|district_name|commune_name)\"[[:space:]]*:[[:space:]]*\"[^\"]*[$diacritic_class][^\"]*\"" \
+      || true)
+    if [ -n "$bad_diacritic" ]; then
+      report "$f: Vietnamese-diacritic text in name/address field"
+      printf '%s\n' "$bad_diacritic" | head -3 | sed 's/^/      /'
+    fi
   fi
 done
 
