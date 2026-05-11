@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### Orders delete: display_id resolver + status pre-check (2026-05-09)
+
+**Scope:** Display ID resolver for `manage_orders action=delete` to enable human-readable order deletion + structured error codes + pre-check validation.
+
+**Motivation:** Production orders have small per-shop sequential numbers (display_id: 521, 'A483') which are easier for humans and LLMs to work with than large internal Pancake ids. Previously, users had to manually resolve display_id → internal id before calling delete; added friction and failure surface.
+
+**Changes:**
+- `src/tools/orders-tool.ts`: new `resolveOrderDisplayId(displayId)` async function implementing two-stage resolver:
+  - Stage 1: `getList("orders", {search: displayId, filter_status: [0], page_size: 200})` — catches most hits where display_id is indexed
+  - Stage 2 (fallback): page-scan up to 5×200 rows when stage 1 returns empty (handles edge cases where search doesn't reach system_id)
+  - Pre-check: GET `orders/{id}` to verify `status === 0` before DELETE (fail fast on non-draft, inform user)
+  - Field resolution: post-filter uses `system_id ?? display_id ?? id` for cross-format compatibility
+- `DeleteAction` schema: new `id_kind` enum ("display_id" | "id"); defaults to "display_id"; `order_id` widened to `union([number, string])` for alphanumeric display_ids
+- Structured error codes (all returned as `PancakeApiError`):
+  - `LIKELY_INTERNAL_ID` (400) — input >1M (looks like internal id; user should retry with `id_kind="id"`)
+  - `NOT_FOUND_DISPLAY_ID` (404) — no match in searched range; suggests checking order exists + is draft
+  - `AMBIGUOUS_DISPLAY_ID` (409) — multiple orders match; error message includes internal ids for disambiguation
+  - `NOT_DRAFT` (409) — order status ≠ 0 (only status=0 deletable); suggests `action="update"` to transition
+  - `STATUS_UNKNOWN` (500) — pre-check GET succeeded but status missing (upstream inconsistency)
+  - `ORDER_NOT_FOUND` (404) — pre-check GET returned 404 (order removed upstream)
+  - `ORDER_GONE` (404) — status=0 confirmed but DELETE returned 404 (raced with transition or deletion)
+- Test fixtures: 5 HTTP traces under `tests/fixtures/orders-delete/` covering success, not-found, ambiguous, not-draft, order-gone scenarios
+- Documentation: `docs/system-architecture.md` (new error codes table), `docs/codebase-summary.md` (resolver flow), `docs/code-standards.md` (error handling patterns), `README.md` (feature note)
+
+**Backlog:** Extend `id_kind` resolver to `update`, `print`, `ship`, `batch_update` actions (currently delete-only for MVP scope; can reuse `resolveOrderDisplayId()` function).
+
+**Plan Reference:** `plans/260508-2233-orders-delete-display-id-resolver/`
+
+**API Behavior:** Breaking change (delete action now interprets order_id as display_id by default). Users upgrading must set `id_kind="id"` if they have internal ids, or update to pass display_ids. Semantic error codes guide troubleshooting.
+
+**Test Status:** All vitest pass; manual fixtures verified against production traces.
+
+---
+
 ### Response projection & replay validation (2026-05-08)
 
 **Scope:** Compact response projection layer (json-mask) + Phase 6 replay-trace validation framework + documentation updates.

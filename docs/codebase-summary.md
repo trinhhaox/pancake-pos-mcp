@@ -334,6 +334,28 @@ Each tool file (~80-120 lines):
 
 **Files:** `tools/analytics-tool.ts`, `tools/tool-registry.ts` (24 tools now)
 
+### 8. Orders Delete: Display ID Resolver (2026-05-09)
+**Feature:** `manage_orders action=delete` now defaults to interpreting `order_id` as `display_id` (small per-shop sequential number like 521 or 'A483'), with automatic resolver to internal Pancake id.
+
+**Two-Stage Resolver:**
+- **Stage 1 (Search-narrow):** `filter_status=[0] + search=<n> + page_size=200` — catches most cases where display_id is indexed
+- **Stage 2 (Page-scan fallback, max 5×200 rows):** Full scan of recent status=0 orders when stage 1 returns empty
+
+**Error Codes (new `PancakeApiError`):**
+- `LIKELY_INTERNAL_ID` (400) — input >1M (looks like internal id; user should set `id_kind="id"`)
+- `NOT_FOUND_DISPLAY_ID` (404) — no match in searched range
+- `AMBIGUOUS_DISPLAY_ID` (409) — multiple orders match (user must disambiguate with internal id)
+- `NOT_DRAFT` (409) — order status ≠0 (only draft orders deletable)
+- `STATUS_UNKNOWN` (500) — pre-check GET succeeded but `status` field missing
+- `ORDER_NOT_FOUND` (404) — pre-check GET returned 404 (order removed upstream)
+- `ORDER_GONE` (404) — status=0 confirmed but DELETE returned 404 (raced with transition)
+
+**Pre-Check:** Before DELETE, resolver verifies `status=0` via GET. Fails fast on non-draft orders.
+
+**Field Resolution:** Response field named `system_id` (post-filter uses `system_id ?? display_id ?? id`).
+
+**Files:** `tools/orders-tool.ts` (resolveOrderDisplayId function), test fixtures in `tests/fixtures/orders-delete/`
+
 ---
 
 ## Data Flow Patterns
@@ -485,7 +507,7 @@ wrapped with deprecation interceptor yet — investigation pending.
 
 ### Required Environment Variables
 ```bash
-PANCAKE_POS_BASE_URL=https://api.pos.poscake.vn  # Pancake API host
+PANCAKE_POS_BASE_URL=https://pos.pages.fm/api/v1  # Pancake API host (canonical per poscake-api-docs.md:14)
 PANCAKE_POS_API_KEY=<your-api-key>               # Bearer token (injected as query param)
 PANCAKE_POS_SHOP_ID=<shop-uuid>                  # Shop identifier (used in URL paths)
 ```
@@ -549,7 +571,7 @@ Recommended checklist (not yet automated):
 ### Prerequisites
 - Bun runtime installed
 - Valid Pancake API credentials (.env file)
-- Network access to Pancake API (api.pos.poscake.vn)
+- Network access to Pancake API (pos.pages.fm)
 
 ### Production Deployment Options
 1. **As CLI Tool** (stdio mode)
@@ -599,3 +621,6 @@ Recommended checklist (not yet automated):
 - **API Documentation:** `/docs/poscake-api-docs.md` (Pancake API reference)
 - **OpenAPI Spec:** `/docs/pancake-openapi-spec.json` (machine-readable API schema)
 
+---
+
+**Last Updated:** 2026-05-12

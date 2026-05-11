@@ -1,7 +1,7 @@
 # Pancake POS MCP - Deployment Guide
 
 **Version:** 0.1.0  
-**Last Updated:** 2026-04-11  
+**Last Updated:** 2026-05-12  
 **Audience:** DevOps engineers, system administrators, developers
 
 ---

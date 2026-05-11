@@ -1,6 +1,6 @@
 # Pancake API Quick Reference Card
 
-**API Base:** `https://api.pancake.vn/api/v1/`  
+**API Base:** `https://pos.pages.fm/api/v1` (canonical per `docs/poscake-api-docs.md:14`, live-verified 2026-05-06)  
 **Version:** v1  
 **Format:** JSON REST/OpenAPI 3.0
 
@@ -105,9 +105,9 @@
 ```
 /shop                            [GET]
 /shop/update                     [POST]
-/address/provinces               [GET]
-/address/districts/{id}          [GET]
-/address/communes/{id}           [GET]
+/geo/provinces                   [GET]
+/geo/districts/{id}              [GET]
+/geo/communes/{id}               [GET]
 /employees                       [GET/POST/PUT/DELETE]
 ```
 
@@ -156,29 +156,23 @@
 
 ---
 
-## Authentication (Inferred from Spec)
+## Authentication
 
-❓ **Not documented in OpenAPI excerpt**
-
-Likely options:
-- Bearer token (JWT)
-- API key in header
-- OAuth2
-
-**Action:** Consult official authentication docs before implementation.
+✓ **API Key** (confirmed)
+- Via `api_key` query parameter
+- Value is the user UUID from Pancake POS dashboard
+- No expiration; rotate via dashboard
+- Verified 2026-04-28+
 
 ---
 
 ## Rate Limiting
 
-❓ **Not documented**
-
-Estimated assumptions:
-- Per-second rate limit (likely 10-100 req/sec)
-- Per-minute/hourly quotas
-- Burst allowance
-
-**Action:** Test in development environment to determine actual limits.
+✓ **Token Bucket** (confirmed)
+- 1000 requests/minute
+- 10000 requests/hour
+- Dual-tier enforced; hour limit is the bottleneck under sustained load
+- MCP client implements token-bucket rate limiter (automatic transparent backpressure)
 
 ---
 
@@ -209,13 +203,17 @@ DELETE /webhooks/{id}         Delete
 
 ---
 
-## Known Limitations
+## Known Limitations & Workarounds
 
-1. ❌ Partial updates (PATCH) not available
-2. ⚠️ Bulk operations limited to products (import/export)
-3. ❌ GraphQL support not documented
-4. ⚠️ Cross-resource queries unclear (can you fetch Order + Customer in one call?)
-5. ❌ Batch endpoints for multiple records not evident
+| Limitation | Status | Workaround |
+|-----------|--------|-----------|
+| Partial updates (PATCH) | ❌ Not supported | Use PUT with only changed fields |
+| Bulk create/delete | ⚠️ Limited | `batch_update` for orders (up to 50/call); use fan-out for other tools |
+| Cross-resource queries | ❌ Not supported | Execute separate queries, compose in client |
+| GraphQL | ❌ Not available | REST only |
+| Silent-drop on api_key auth | ⚠️ Known issue | `manage_orders` verify-after-update detects and warns |
+| Address dual-schema (OLD/NEW) | ✓ Handled | MCP validates complete location sets; guides caller to lookup_address |
+| Delete only on status=0 | ✓ By design | Pre-check enforces; display_id resolver explains why |
 
 ---
 
@@ -246,8 +244,8 @@ All files in: `./docs/`
 
 ---
 
-**Last Updated:** 2026-04-09  
-**Status:** Ready for implementation planning  
-**Confidence:** HIGH (official source)
+**Last Updated:** 2026-05-12  
+**Status:** Implementation Complete (24 tools, 7 resources)  
+**Confidence:** HIGH (verified against production)
 
 Next: Request full authentication documentation and webhook event catalog.

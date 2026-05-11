@@ -1,5 +1,7 @@
 # Research Complete: Pancake POS API Discovery
 
+> 📜 **HISTORICAL** — Pre-implementation research from 2026-04-09. All open questions have been resolved through implementation; see [codebase-summary.md](./codebase-summary.md) for current state.
+
 **Status:** COMPLETE  
 **Date:** 2026-04-09  
 **Research Quality:** High confidence (official OpenAPI specification)

@@ -1,5 +1,7 @@
 # Pancake API: Known vs. Discovered Endpoints
 
+> 📜 **HISTORICAL** — Pre-implementation research from 2026-04-09. All open questions have been resolved through implementation; see [codebase-summary.md](./codebase-summary.md) for current state.
+
 **Date:** 2026-04-09  
 **Total Endpoints:** 50+
 

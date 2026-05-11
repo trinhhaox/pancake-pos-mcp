@@ -234,6 +234,7 @@ Static reference resources (no authentication required):
 - **Error Handling:** Structured error responses with code and message
 - **Compact responses:** `verbosity: "compact"` (default) trims payloads 60–85% on orders, products, warehouses, lookup_address; `"full"` for debugging
 - **Bulk ops:** `manage_orders` `batch_update` action patches up to 50 orders per call
+- **Display ID resolver:** `manage_orders action=delete` defaults to interpreting `order_id` as `display_id` (small per-shop number like 521 or 'A483') via a two-stage search+scan resolver; set `id_kind="id"` to pass internal Pancake id directly. Returns structured error codes: `LIKELY_INTERNAL_ID`, `NOT_FOUND_DISPLAY_ID`, `AMBIGUOUS_DISPLAY_ID`, `NOT_DRAFT`, `STATUS_UNKNOWN`, `ORDER_NOT_FOUND`, `ORDER_GONE`.
 - **Replay validation:** `tests/replay/` re-runs production traces against local handlers to gate response-size regressions
 
 ## Development

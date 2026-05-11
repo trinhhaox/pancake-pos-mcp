@@ -345,8 +345,6 @@ if (result.error) {  // Now safe to check
 }
 ```
 
-Only `address-lookup-tool.ts` currently uses `getRaw()`; this should be fixed.
-
 ### Rate Limiting Behavior (Automatic)
 - Checked before every fetch
 - Tool authors don't need to do anything
@@ -534,13 +532,7 @@ Request builder must encode path segments:
 new URL(`/shops/${encodeURIComponent(shopId)}/orders`, baseUrl)
 ```
 
-⚠️ **Current Implementation:** Does NOT encode segments (CRITICAL BUG)
-```typescript
-// Current code (vulnerable):
-new URL(path, `${baseUrl}/shops/${shopId}/`)
-```
-
-**Fix:** Use `encodeURIComponent()` on all user-supplied path segments.
+✓ **Resolved (2026-05-10):** Path segments are now encoded via `encodePathSegments()` in `request-builder.ts` line 40-42. All URL construction goes through `buildRequestUrl()` which calls this function.
 
 ---
 
@@ -548,7 +540,7 @@ new URL(path, `${baseUrl}/shops/${shopId}/`)
 
 ### Environment Variables (Required at Startup)
 ```bash
-PANCAKE_POS_BASE_URL=https://api.pos.poscake.vn
+PANCAKE_POS_BASE_URL=https://pos.pages.fm/api/v1
 PANCAKE_POS_API_KEY=<bearer-token>
 PANCAKE_POS_SHOP_ID=<shop-uuid>
 ```
@@ -563,7 +555,7 @@ export interface PancakeConfig {
 
 export function loadConfig(): PancakeConfig {
   return {
-    PANCAKE_POS_BASE_URL: process.env.PANCAKE_POS_BASE_URL || "https://api.pos.poscake.vn",
+    PANCAKE_POS_BASE_URL: process.env.PANCAKE_POS_BASE_URL || "https://pos.pages.fm/api/v1",
     PANCAKE_POS_API_KEY: process.env.PANCAKE_POS_API_KEY || "",
     PANCAKE_POS_SHOP_ID: process.env.PANCAKE_POS_SHOP_ID || "",
   };
@@ -648,8 +640,8 @@ console.log(`Processing order ${order_id}`);  // Too chatty
 ### Log Redaction (Required for Secrets)
 Use `redactUrl()` helper to hide API key from logs:
 ```typescript
-redactUrl("https://api.pos.poscake.vn/shops/123?token=secret")
-// Returns: "https://api.pos.poscake.vn/shops/123?token=***"
+redactUrl("https://pos.pages.fm/api/v1/shops/123?token=secret")
+// Returns: "https://pos.pages.fm/api/v1/shops/123?token=***"
 ```
 
 ---

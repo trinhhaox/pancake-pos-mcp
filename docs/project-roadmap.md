@@ -139,6 +139,27 @@ Pancake POS MCP implementation is **feature-complete** with all 24 tools deploye
 
 ---
 
+## Current Milestone: Orders Delete Display ID Resolver (2026-05-09)
+
+**Status:** Completed (two-stage resolver, structured error codes, pre-check validation)
+
+### Completion
+- [x] Display ID resolver for `manage_orders action=delete` (defaults to display_id, not internal id)
+- [x] Two-stage resolution: search-narrow (stage 1) + page-scan fallback (stage 2, max 5×200)
+- [x] Pre-check: verify `status=0` before DELETE (fail fast on non-draft)
+- [x] Structured error codes: LIKELY_INTERNAL_ID, NOT_FOUND_DISPLAY_ID, AMBIGUOUS_DISPLAY_ID, NOT_DRAFT, STATUS_UNKNOWN, ORDER_NOT_FOUND, ORDER_GONE
+- [x] Field resolution: use `system_id ?? display_id ?? id` for cross-format compat
+- [x] Test fixtures: 5 HTTP traces under tests/fixtures/orders-delete/
+- [x] Documentation: system-architecture.md + codebase-summary.md + README.md
+
+**Impact:** Users can now delete orders by human-readable display_id (e.g. 521 or 'A483') without needing to resolve internal id first; structured errors guide troubleshooting.
+
+**Backlog:** Extend `id_kind` resolver to `update`, `print`, `ship`, `batch_update` actions (deferred; currently delete-only).
+
+**Plan Reference:** [plans/260508-2233-orders-delete-display-id-resolver/](../plans/260508-2233-orders-delete-display-id-resolver/)
+
+---
+
 ## Previous Milestone: Analytics Gap Fix (2026-05-06)
 
 **Status:** Completed (array serialization, sort enum, aggs preservation, analytics tool)

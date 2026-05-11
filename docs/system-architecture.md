@@ -1,8 +1,8 @@
 # Pancake POS MCP - System Architecture
 
 **Version:** 0.1.0  
-**Last Updated:** 2026-05-06  
-**Status:** Complete (All 5 phases + analytics features implemented and reviewed)
+**Last Updated:** 2026-05-12  
+**Status:** Complete (All 6 phases + display ID resolver implemented and reviewed)
 
 ---
 
@@ -65,7 +65,7 @@
                                                         │
                              ┌──────────────────────────▼──────┐
                              │  Pancake POS REST API            │
-                             │  (api.pos.poscake.vn)            │
+                             │  (pos.pages.fm/api/v1)           │
                              │                                  │
                              │  +23 Endpoint Domains:           │
                              │  • Orders, Products, Customers   │
@@ -281,12 +281,12 @@ Request Input:
   ↓
 
 URL Construction (Request Builder):
-  1. Base: https://api.pos.poscake.vn
+  1. Base: https://pos.pages.fm/api/v1
   2. Path segment encoding: /shops/{encoded_shopId}/orders
   3. Auth injection: ?api_key=X
   4. Query params (bracket-style arrays): &search=12345&page=1&page_size=30&filter_status[]=1&filter_status[]=2
      (Arrays serialized as key[]=v1&key[]=v2, NOT key=["v1","v2"])
-  Final: https://api.pos.poscake.vn/shops/.../orders?search=...&api_key=...&filter_status[]=1&filter_status[]=2
+  Final: https://pos.pages.fm/api/v1/shops/.../orders?search=...&api_key=...&filter_status[]=1&filter_status[]=2
 
   ↓
 
@@ -350,6 +350,23 @@ If still 5xx (attempt 3 of 3):
   
 AI Assistant receives error, can retry or handle gracefully
 ```
+
+### Structured Error Codes (PancakeApiError)
+
+For complex operations, tools throw `PancakeApiError` with semantic codes instead of generic HTTP status:
+
+**Orders Delete — Display ID Resolver Codes:**
+| Code | HTTP | Meaning | Action |
+|------|------|---------|--------|
+| `LIKELY_INTERNAL_ID` | 400 | Input >1M looks like internal id, not display_id | Retry with `id_kind="id"` |
+| `NOT_FOUND_DISPLAY_ID` | 404 | No match among status=0 orders | Verify order exists and is draft; use internal id if known |
+| `AMBIGUOUS_DISPLAY_ID` | 409 | Multiple orders match the display_id | Disambiguate using internal id (provided in error message) |
+| `NOT_DRAFT` | 409 | Order status ≠ 0 (only draft orders deletable) | Use `action="update"` to transition order status first |
+| `STATUS_UNKNOWN` | 500 | Pre-check GET succeeded but status field missing | Upstream API inconsistency; retry or contact support |
+| `ORDER_NOT_FOUND` | 404 | Pre-check GET returned 404 (order removed upstream) | Order no longer exists; may have been deleted concurrently |
+| `ORDER_GONE` | 404 | Status verified but DELETE returned 404 | Order transitioned or deleted between pre-check and delete (race condition) |
+
+Tool handlers wrap these errors via `formatToolError()` → MCP error response with code + message.
 
 ---
 
@@ -568,7 +585,7 @@ Each resource is exposed as a read-only MCP Resource (no write).
 ### Authentication Flow
 ```
 User provides at startup:
-  PANCAKE_POS_BASE_URL       = "https://api.pos.poscake.vn"
+  PANCAKE_POS_BASE_URL       = "https://pos.pages.fm/api/v1"
   PANCAKE_POS_API_KEY        = "<bearer-token>"
   PANCAKE_POS_SHOP_ID        = "<shop-uuid>"
 
@@ -576,7 +593,7 @@ Request Builder injects:
   Every URL gets: ?shop_id={shopId}&access_token={apiKey}
 
 Example:
-  https://api.pos.poscake.vn/shops/{shopId}/orders
+  https://pos.pages.fm/api/v1/shops/{shopId}/orders
   ?shop_id=abc123&access_token=xyz789
 ```
 
