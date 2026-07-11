@@ -28,8 +28,13 @@ export type ShopInfoToolInput = z.infer<typeof shopInfoToolSchema>;
 export async function handleShopInfoTool(args: ShopInfoToolInput, client: PancakeHttpClient) {
   switch (args.action) {
     case "get": {
-      const result = await client.get("shop");
-      return result.data;
+      // Pancake returns the shop at GET /shops/{id} with a root-level
+      // `shop` field (NOT wrapped under `data`): { success, shop: {...} }.
+      // parseResponse casts the whole JSON to PancakeResponse, so `data` is
+      // undefined here — read `shop` directly off the raw response.
+      const result = await client.get<Record<string, unknown>>("");
+      const raw = result as unknown as Record<string, unknown>;
+      return (raw.shop ?? raw.data ?? raw) as Record<string, unknown>;
     }
     case "update": {
       const { action, ...body } = args;

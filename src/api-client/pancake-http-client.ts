@@ -43,10 +43,17 @@ export class PancakeHttpClient {
   private lastHourRefill = Date.now();
   private readonly hourRefillRateMs = 360; // 1 token every 360ms = 10000/hour
 
+  // Pancake POS requires BOTH the api_key query param (for shop-scoped
+  // routing) AND an `Authorization: Bearer <apiKey>` header (many endpoints
+  // such as orders/products/customers reject requests with only api_key via
+  // "Missing access_token"). Send both on every request.
+  private readonly authHeaders: Record<string, string>;
+
   constructor(config: PancakeConfig, options?: HttpClientOptions) {
     this.baseUrl = config.PANCAKE_POS_BASE_URL;
     this.apiKey = config.PANCAKE_POS_API_KEY;
     this.shopId = config.PANCAKE_POS_SHOP_ID;
+    this.authHeaders = { Authorization: `Bearer ${this.apiKey}` };
     this.fetchTimeoutMs = options?.fetchTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.enableRateLimiter = options?.enableRateLimiter ?? true;
@@ -54,13 +61,13 @@ export class PancakeHttpClient {
 
   async get<T>(path: string, params?: Record<string, unknown>): Promise<PancakeResponse<T>> {
     const url = buildRequestUrl(this.baseUrl, this.shopId, this.apiKey, path, params);
-    const response = await this.executeWithRetry(url, { method: "GET" });
+    const response = await this.executeWithRetry(url, { method: "GET", headers: this.authHeaders });
     return parseResponse<T>(response);
   }
 
   async getList<T>(path: string, params?: Record<string, unknown>): Promise<PancakeListResponse<T>> {
     const url = buildRequestUrl(this.baseUrl, this.shopId, this.apiKey, path, params);
-    const response = await this.executeWithRetry(url, { method: "GET" });
+    const response = await this.executeWithRetry(url, { method: "GET", headers: this.authHeaders });
     return parsePaginatedResponse<T>(response);
   }
 
@@ -68,7 +75,7 @@ export class PancakeHttpClient {
     const url = buildRequestUrl(this.baseUrl, this.shopId, this.apiKey, path);
     const response = await this.executeWithRetry(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...this.authHeaders },
       body: body ? JSON.stringify(body) : undefined,
     });
     return parseResponse<T>(response);
@@ -78,7 +85,7 @@ export class PancakeHttpClient {
     const url = buildRequestUrl(this.baseUrl, this.shopId, this.apiKey, path);
     const response = await this.executeWithRetry(url, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...this.authHeaders },
       body: body ? JSON.stringify(body) : undefined,
     });
     return parseResponse<T>(response);
@@ -86,7 +93,7 @@ export class PancakeHttpClient {
 
   async delete(path: string): Promise<PancakeResponse<void>> {
     const url = buildRequestUrl(this.baseUrl, this.shopId, this.apiKey, path);
-    const response = await this.executeWithRetry(url, { method: "DELETE" });
+    const response = await this.executeWithRetry(url, { method: "DELETE", headers: this.authHeaders });
     return parseResponse<void>(response);
   }
 
