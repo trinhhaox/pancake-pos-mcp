@@ -52,25 +52,25 @@ export async function handleSuppliersTool(args: SuppliersToolInput, client: Panc
   switch (args.action) {
     case "list": {
       const { action, ...params } = args;
-      const result = await client.getList("suppliers", params);
+      const result = await client.getList("supplier", params);
       return formatPaginatedResult(result);
     }
     case "get": {
-      const result = await client.get(`suppliers/${args.supplier_id}`);
+      const result = await client.get(`supplier/${args.supplier_id}`);
       return result.data;
     }
     case "create": {
       const { action, ...body } = args;
-      const result = await client.post("suppliers", body);
+      const result = await client.post("supplier", body);
       return result.data;
     }
     case "update": {
       const { action, supplier_id, ...body } = args;
-      const result = await client.put(`suppliers/${supplier_id}`, body);
+      const result = await client.put(`supplier/${supplier_id}`, body);
       return result.data;
     }
     case "delete": {
-      await client.delete(`suppliers/${args.supplier_id}`);
+      await client.delete(`supplier/${args.supplier_id}`);
       return { success: true, message: `Supplier ${args.supplier_id} deleted` };
     }
   }

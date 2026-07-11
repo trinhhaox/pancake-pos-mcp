@@ -55,25 +55,25 @@ export async function handleTransfersTool(args: TransfersToolInput, client: Panc
   switch (args.action) {
     case "list": {
       const { action, ...params } = args;
-      const result = await client.getList("warehouse-transfers", params);
+      const result = await client.getList("transfers", params);
       return formatPaginatedResult(result);
     }
     case "get": {
-      const result = await client.get(`warehouse-transfers/${args.transfer_id}`);
+      const result = await client.get(`transfers/${args.transfer_id}`);
       return result.data;
     }
     case "create": {
       const { action, ...body } = args;
-      const result = await client.post("warehouse-transfers", body);
+      const result = await client.post("transfers", body);
       return result.data;
     }
     case "update": {
       const { action, transfer_id, ...body } = args;
-      const result = await client.put(`warehouse-transfers/${transfer_id}`, body);
+      const result = await client.put(`transfers/${transfer_id}`, body);
       return result.data;
     }
     case "delete": {
-      await client.delete(`warehouse-transfers/${args.transfer_id}`);
+      await client.delete(`transfers/${args.transfer_id}`);
       return { success: true, message: `Transfer ${args.transfer_id} deleted` };
     }
   }

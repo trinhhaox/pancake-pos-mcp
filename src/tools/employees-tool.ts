@@ -53,25 +53,25 @@ export async function handleEmployeesTool(args: EmployeesToolInput, client: Panc
   switch (args.action) {
     case "list": {
       const { action, ...params } = args;
-      const result = await client.getList("employees", params);
+      const result = await client.getList("users", params);
       return formatPaginatedResult(result);
     }
     case "get": {
-      const result = await client.get(`employees/${args.employee_id}`);
+      const result = await client.get(`users/${args.employee_id}`);
       return result.data;
     }
     case "create": {
       const { action, ...body } = args;
-      const result = await client.post("employees", body);
+      const result = await client.post("users", body);
       return result.data;
     }
     case "update": {
       const { action, employee_id, ...body } = args;
-      const result = await client.put(`employees/${employee_id}`, body);
+      const result = await client.put(`users/${employee_id}`, body);
       return result.data;
     }
     case "delete": {
-      await client.delete(`employees/${args.employee_id}`);
+      await client.delete(`users/${args.employee_id}`);
       return { success: true, message: `Employee ${args.employee_id} deleted` };
     }
   }
