@@ -26,13 +26,17 @@ export type EcommerceToolInput = z.infer<typeof ecommerceToolSchema>;
 export async function handleEcommerceTool(args: EcommerceToolInput, client: PancakeHttpClient) {
   switch (args.action) {
     case "sync": {
-      const { action, ...body } = args;
-      const result = await client.post("ecommerce/sync", body);
+      // Pancake has no generic sync endpoint. marketplace/get_account_info
+      // returns the connected eCommerce platform accounts (Shopee/Lazada/TikTok).
+      const result = await client.get("marketplace/get_account_info", {
+        channel: args.channel,
+        shop_channel_id: args.shop_channel_id,
+      } as Record<string, unknown>);
       return result.data;
     }
     case "list_products": {
       const { action, ...params } = args;
-      const result = await client.getList("ecommerce/products", params);
+      const result = await client.getList("marketplace/products", params);
       return formatPaginatedResult(result);
     }
   }

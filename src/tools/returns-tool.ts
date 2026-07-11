@@ -64,25 +64,25 @@ export async function handleReturnsTool(args: ReturnsToolInput, client: PancakeH
   switch (args.action) {
     case "list": {
       const { action, ...params } = args;
-      const result = await client.getList("order-returns", params);
+      const result = await client.getList("orders_returned", params);
       return formatPaginatedResult(result);
     }
     case "get": {
-      const result = await client.get(`order-returns/${args.return_id}`);
+      const result = await client.get(`orders_returned/${args.return_id}`);
       return result.data;
     }
     case "create": {
       const { action, ...body } = args;
-      const result = await client.post("order-returns", body);
+      const result = await client.post("orders_returned", body);
       return result.data;
     }
     case "update": {
       const { action, return_id, ...body } = args;
-      const result = await client.put(`order-returns/${return_id}`, body);
+      const result = await client.put(`orders_returned/${return_id}`, body);
       return result.data;
     }
     case "delete": {
-      await client.delete(`order-returns/${args.return_id}`);
+      await client.delete(`orders_returned/${args.return_id}`);
       return { success: true, message: `Return ${args.return_id} deleted` };
     }
   }

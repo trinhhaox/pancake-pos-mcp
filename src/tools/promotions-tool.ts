@@ -58,25 +58,25 @@ export async function handlePromotionsTool(args: PromotionsToolInput, client: Pa
   switch (args.action) {
     case "list": {
       const { action, ...params } = args;
-      const result = await client.getList("promotions", params);
+      const result = await client.getList("promotion_advance", params);
       return formatPaginatedResult(result);
     }
     case "get": {
-      const result = await client.get(`promotions/${args.promotion_id}`);
+      const result = await client.get(`promotion_advance/${args.promotion_id}`);
       return result.data;
     }
     case "create": {
       const { action, ...body } = args;
-      const result = await client.post("promotions", body);
+      const result = await client.post("promotion_advance", body);
       return result.data;
     }
     case "update": {
       const { action, promotion_id, ...body } = args;
-      const result = await client.put(`promotions/${promotion_id}`, body);
+      const result = await client.put(`promotion_advance/${promotion_id}`, body);
       return result.data;
     }
     case "delete": {
-      await client.delete(`promotions/${args.promotion_id}`);
+      await client.delete(`promotion_advance/${args.promotion_id}`);
       return { success: true, message: `Promotion ${args.promotion_id} deleted` };
     }
   }

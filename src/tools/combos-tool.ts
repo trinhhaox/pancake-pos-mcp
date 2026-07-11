@@ -69,25 +69,25 @@ export async function handleCombosTool(args: CombosToolInput, client: PancakeHtt
   switch (args.action) {
     case "list": {
       const { action, ...params } = args;
-      const result = await client.getList("combo-products", params);
+      const result = await client.getList("combo_products", params);
       return formatPaginatedResult(result);
     }
     case "get": {
-      const result = await client.get(`combo-products/${args.combo_id}`);
+      const result = await client.get(`combo_products/${args.combo_id}`);
       return result.data;
     }
     case "create": {
       const { action, ...body } = args;
-      const result = await client.post("combo-products", body);
+      const result = await client.post("combo_products", body);
       return result.data;
     }
     case "update": {
       const { action, combo_id, ...body } = args;
-      const result = await client.put(`combo-products/${combo_id}`, body);
+      const result = await client.put(`combo_products/${combo_id}`, body);
       return result.data;
     }
     case "delete": {
-      await client.delete(`combo-products/${args.combo_id}`);
+      await client.delete(`combo_products/${args.combo_id}`);
       return { success: true, message: `Combo ${args.combo_id} deleted` };
     }
   }

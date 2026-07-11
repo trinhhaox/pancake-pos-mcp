@@ -22,7 +22,7 @@ export async function handleInventoryTool(args: InventoryToolInput, client: Panc
   switch (args.action) {
     case "report": {
       const { action, ...params } = args;
-      const result = await client.get("inventory-report", params);
+      const result = await client.get("inventory_analytics/inventory", params);
       return result.data;
     }
   }

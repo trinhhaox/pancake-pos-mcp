@@ -20,6 +20,14 @@ export type StatisticsToolInput = z.infer<typeof statisticsToolSchema>;
 
 export async function handleStatisticsTool(args: StatisticsToolInput, client: PancakeHttpClient) {
   const { action, type, ...params } = args;
-  const result = await client.get(`statistics/${type}`, params);
+  // Map documented statistics types to verified Pancake POS endpoints.
+  // - inventory -> /inventory_analytics/inventory (Statistics by variant)
+  // - sales     -> /analytics/sale (Order statistics)
+  // - orders    -> /analytics/sale (same order-statistics endpoint)
+  const path =
+    type === "inventory"
+      ? "inventory_analytics/inventory"
+      : "analytics/sale";
+  const result = await client.get(path, params);
   return result.data;
 }

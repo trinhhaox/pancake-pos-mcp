@@ -530,7 +530,7 @@ export async function handleOrdersTool(args: OrdersToolInput, client: PancakeHtt
     }
     case "call_later": {
       const { action, ...rest } = args;
-      const result = await client.post("order-call-later", {
+      const result = await client.post("order_call_laters", {
         order_call_later: { status: 0, ...rest },
       });
       return result.data;

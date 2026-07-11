@@ -16,7 +16,7 @@ const ListAction = z.object({
 
 const GetAction = z.object({
   action: z.literal("get"),
-  stocktaking_id: z.string().describe("Stocktaking ID"),
+  stocktakings_id: z.string().describe("Stocktaking ID"),
 });
 
 const CreateAction = z.object({
@@ -28,7 +28,7 @@ const CreateAction = z.object({
 
 const UpdateAction = z.object({
   action: z.literal("update"),
-  stocktaking_id: z.string().describe("Stocktaking ID to update"),
+  stocktakings_id: z.string().describe("Stocktaking ID to update"),
   status: z.coerce.number().int().optional().describe("Stocktaking status"),
   note: z.string().optional(),
   items: z.array(StocktakingItem).optional(),
@@ -36,7 +36,7 @@ const UpdateAction = z.object({
 
 const DeleteAction = z.object({
   action: z.literal("delete"),
-  stocktaking_id: z.string().describe("Stocktaking ID to delete"),
+  stocktakings_id: z.string().describe("Stocktaking ID to delete"),
 });
 
 export const stocktakingToolSchema = z.discriminatedUnion("action", [
@@ -53,26 +53,26 @@ export async function handleStocktakingTool(args: StocktakingToolInput, client: 
   switch (args.action) {
     case "list": {
       const { action, ...params } = args;
-      const result = await client.getList("stocktaking", params);
+      const result = await client.getList("stocktakings", params);
       return formatPaginatedResult(result);
     }
     case "get": {
-      const result = await client.get(`stocktaking/${args.stocktaking_id}`);
+      const result = await client.get(`stocktakings/${args.stocktakings_id}`);
       return result.data;
     }
     case "create": {
       const { action, ...body } = args;
-      const result = await client.post("stocktaking", body);
+      const result = await client.post("stocktakings", body);
       return result.data;
     }
     case "update": {
-      const { action, stocktaking_id, ...body } = args;
-      const result = await client.put(`stocktaking/${stocktaking_id}`, body);
+      const { action, stocktakings_id, ...body } = args;
+      const result = await client.put(`stocktakings/${stocktakings_id}`, body);
       return result.data;
     }
     case "delete": {
-      await client.delete(`stocktaking/${args.stocktaking_id}`);
-      return { success: true, message: `Stocktaking ${args.stocktaking_id} deleted` };
+      await client.delete(`stocktakings/${args.stocktakings_id}`);
+      return { success: true, message: `Stocktaking ${args.stocktakings_id} deleted` };
     }
   }
 }

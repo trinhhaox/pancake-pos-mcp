@@ -1,7 +1,12 @@
 import { z } from "zod";
 import type { PancakeHttpClient } from "../api-client/pancake-http-client.js";
-import { formatPaginatedResult } from "../shared/pagination-helpers.js";
 import { PaginationParams } from "../shared/schemas.js";
+
+// NOTE: The official Pancake POS Open API (api-docs.pancake.vn, v1.0.0, 85
+// paths) does NOT expose any webhook management endpoint. Webhooks are
+// configured in the Pancake POS dashboard UI, not via this REST API. The
+// handlers below therefore do not call the API and return a clear error so
+// callers are not misled into thinking the operation succeeded.
 
 const ListAction = z.object({
   action: z.literal("list"),
@@ -45,30 +50,9 @@ export const webhooksToolSchema = z.discriminatedUnion("action", [
 
 export type WebhooksToolInput = z.infer<typeof webhooksToolSchema>;
 
-export async function handleWebhooksTool(args: WebhooksToolInput, client: PancakeHttpClient) {
-  switch (args.action) {
-    case "list": {
-      const { action, ...params } = args;
-      const result = await client.getList("webhooks", params);
-      return formatPaginatedResult(result);
-    }
-    case "get": {
-      const result = await client.get(`webhooks/${args.webhook_id}`);
-      return result.data;
-    }
-    case "create": {
-      const { action, ...body } = args;
-      const result = await client.post("webhooks", body);
-      return result.data;
-    }
-    case "update": {
-      const { action, webhook_id, ...body } = args;
-      const result = await client.put(`webhooks/${webhook_id}`, body);
-      return result.data;
-    }
-    case "delete": {
-      await client.delete(`webhooks/${args.webhook_id}`);
-      return { success: true, message: `Webhook ${args.webhook_id} deleted` };
-    }
-  }
+const UNSUPPORTED =
+  "Webhook management is not available via the Pancake POS REST API (confirmed against the official OpenAPI spec at api-docs.pancake.vn, v1.0.0). Configure webhooks in the Pancake POS web dashboard instead.";
+
+export async function handleWebhooksTool(_args: WebhooksToolInput, _client: PancakeHttpClient) {
+  throw new Error(UNSUPPORTED);
 }

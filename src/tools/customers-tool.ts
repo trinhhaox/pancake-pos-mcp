@@ -116,8 +116,10 @@ export async function handleCustomersTool(args: CustomersToolInput, client: Panc
       return result.data;
     }
     case "add_note": {
-      const { action, ...body } = args;
-      const result = await client.post("customer-notes", body);
+      // Pancake: POST /shops/{id}/customers/{customer_id}/create_note
+      const { action, customer_id, ...body } = args;
+      if (!customer_id) throw new Error("add_note requires customer_id");
+      const result = await client.post(`customers/${customer_id}/create_note`, body);
       return result.data;
     }
   }
